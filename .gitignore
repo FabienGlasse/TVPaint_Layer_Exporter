@@ -6,10 +6,10 @@ dist/
 output/
 tmp/
 packaging/tools/
-portable_exporter/User Guide.html
-portable_exporter/Freelancer Guide.pdf
-portable_exporter/bridge/*.dll
-portable_exporter/bridge/*.zip
+exporter/User Guide.html
+exporter/Freelancer Guide.pdf
+exporter/bridge/*.dll
+exporter/bridge/*.zip
 *.log
 *.tmp
 *.tvpp

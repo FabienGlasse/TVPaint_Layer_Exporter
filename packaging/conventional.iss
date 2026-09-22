@@ -3,9 +3,9 @@
 [Setup]
 AppId={{AABEE845-6716-45CF-A26A-9222A2F3808A}
 AppName={#AppName}
-AppVersion=2.0.0
+AppVersion=1.0.0
 AppPublisher=Fabien Glasse
-SetupIconFile=..\portable_exporter\TVPaint_Exporter_Logo.ico
+SetupIconFile=..\exporter\TVPaint_Exporter_Logo.ico
 UninstallDisplayIcon={app}\TVPaint_Exporter_Logo.ico
 DefaultDirName={localappdata}\TVPaintLayerExporter
 DisableDirPage=yes
@@ -26,21 +26,21 @@ CloseApplications=yes
 [Files]
 Source: "Install.bat"; DestDir: "{app}"; Flags: ignoreversion
 Source: "setup_steps.py"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\portable_exporter\export_layers.py"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\portable_exporter\export_options.py"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\portable_exporter\exporter_ui.py"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\exporter\export_layers.py"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\exporter\export_options.py"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\exporter\exporter_ui.py"; DestDir: "{app}"; Flags: ignoreversion
 Source: "Uninstall.bat"; DestDir: "{app}"; Flags: ignoreversion
 Source: "uninstall.py"; DestDir: "{app}"; Flags: ignoreversion
 Source: "component_cleanup.py"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\portable_exporter\requirements.txt"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\portable_exporter\TVPaint_Exporter_Logo.png"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\portable_exporter\TVPaint_Exporter_Logo.ico"; DestDir: "{app}"; Flags: ignoreversion
-Source: "User Guide.html"; DestDir: "{app}"; Flags: ignoreversion
-Source: "Freelancer Guide.pdf"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\exporter\requirements.txt"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\exporter\TVPaint_Exporter_Logo.png"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\exporter\TVPaint_Exporter_Logo.ico"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\docs\assets\User Guide.html"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\docs\assets\User Guide.pdf"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{autoprograms}\{#AppName}\Configure exporter"; Filename: "{app}\Install.bat"; IconFilename: "{app}\TVPaint_Exporter_Logo.ico"
-Name: "{autoprograms}\{#AppName}\Instructions"; Filename: "{app}\Freelancer Guide.pdf"
+Name: "{autoprograms}\{#AppName}\Instructions"; Filename: "{app}\User Guide.pdf"
 Name: "{autoprograms}\{#AppName}\Uninstall"; Filename: "{uninstallexe}"
 
 [Run]

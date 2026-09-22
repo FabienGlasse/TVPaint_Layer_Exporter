@@ -1,4 +1,4 @@
-"""Freelancer-facing v2 interface. All TVPaint work runs off the UI thread."""
+"""TVPaint exporter interface. All TVPaint work runs off the UI thread."""
 from pathlib import Path
 import json
 import os

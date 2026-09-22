@@ -10,7 +10,7 @@ from export_options import Options, IMAGE_FORMATS, plan, frame_path, check_writa
 from test_export_layers import FakeTVPaint
 
 
-class V2Tests(unittest.TestCase):
+class ExportOptionsTests(unittest.TestCase):
     def test_flat_output_collision_names_and_resume(self):
         with tempfile.TemporaryDirectory() as tmp:
             output = Path(tmp)/'out'

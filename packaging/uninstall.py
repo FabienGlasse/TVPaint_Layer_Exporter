@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import component_cleanup
 
 APP_ID = "FabienGlasse.TVPaintLayerExporter"
-FILES = ("export_layers.py", "export_options.py", "exporter_ui.py", "User Guide.html", "Freelancer Guide.html", "Freelancer Guide.pdf",
+FILES = ("export_layers.py", "export_options.py", "exporter_ui.py", "User Guide.html", "User Guide.pdf", "Freelancer Guide.html", "Freelancer Guide.pdf",
          "TVPaint_Exporter_Logo.png", "TVPaint_Exporter_Logo.ico", "requirements.txt",
          "setup_steps.py", "component_cleanup.py", "python_path.txt", "Install.bat", "uninstall.py", "installation.json",
          "settings.json", "settings.tmp", "setup.log")

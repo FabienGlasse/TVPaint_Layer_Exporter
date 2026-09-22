@@ -1,18 +1,24 @@
 $ErrorActionPreference = 'Stop'
 $source = $PSScriptRoot
 $workspace = Split-Path -Parent $source
+$guide = Join-Path $workspace 'docs\assets'
+$version = '1.0.0'
 $batFolder = Join-Path $workspace 'dist\TVPaint_CMD_Installer'
 New-Item -ItemType Directory -Path $batFolder -Force | Out-Null
 $packageFiles = @()
-foreach ($name in @('Install.bat','setup_steps.py','Uninstall.bat','uninstall.py','component_cleanup.py','User Guide.html','Freelancer Guide.pdf')) {
+foreach ($name in @('Install.bat','setup_steps.py','Uninstall.bat','uninstall.py','component_cleanup.py')) {
     Copy-Item -LiteralPath (Join-Path $source $name) -Destination (Join-Path $batFolder $name) -Force
     $packageFiles += Join-Path $batFolder $name
 }
-foreach ($name in @('export_layers.py','export_options.py','exporter_ui.py','requirements.txt','TVPaint_Exporter_Logo.png','TVPaint_Exporter_Logo.ico')) {
-    Copy-Item -LiteralPath (Join-Path $workspace "portable_exporter\$name") -Destination (Join-Path $batFolder $name) -Force
+foreach ($name in @('User Guide.html','User Guide.pdf')) {
+    Copy-Item -LiteralPath (Join-Path $guide $name) -Destination (Join-Path $batFolder $name) -Force
     $packageFiles += Join-Path $batFolder $name
 }
-Compress-Archive -LiteralPath $packageFiles -DestinationPath (Join-Path $workspace 'dist\TVPaint_CMD_Installer.zip') -Force
+foreach ($name in @('export_layers.py','export_options.py','exporter_ui.py','requirements.txt','TVPaint_Exporter_Logo.png','TVPaint_Exporter_Logo.ico')) {
+    Copy-Item -LiteralPath (Join-Path $workspace "exporter\$name") -Destination (Join-Path $batFolder $name) -Force
+    $packageFiles += Join-Path $batFolder $name
+}
+Compress-Archive -LiteralPath $packageFiles -DestinationPath (Join-Path $workspace "dist\TVPaint_Layer_Exporter_${version}_CMD.zip") -Force
 $compiler = $env:INNO_SETUP_COMPILER
 if (-not $compiler) {
     $candidates = @(
@@ -25,4 +31,4 @@ if (-not $compiler) {
 if (-not $compiler -or -not (Test-Path -LiteralPath $compiler)) { throw 'Install Inno Setup 6 or set INNO_SETUP_COMPILER to its ISCC.exe path.' }
 & $compiler (Join-Path $source 'conventional.iss')
 if ($LASTEXITCODE -ne 0) { throw 'Conventional installer compilation failed.' }
-Compress-Archive -LiteralPath (Join-Path $workspace 'dist\conventional\TVPaintLayerExporterSetup.exe'),(Join-Path $source 'User Guide.html'),(Join-Path $source 'Freelancer Guide.pdf') -DestinationPath (Join-Path $workspace 'dist\TVPaint_Conventional_Installer.zip') -Force
+Compress-Archive -LiteralPath (Join-Path $workspace 'dist\conventional\TVPaintLayerExporterSetup.exe'),(Join-Path $guide 'User Guide.html'),(Join-Path $guide 'User Guide.pdf') -DestinationPath (Join-Path $workspace "dist\TVPaint_Layer_Exporter_${version}_Setup.zip") -Force

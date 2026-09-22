@@ -1,7 +1,5 @@
-"""Build the freelancer PDF and matching HTML from the same guide content."""
+"""Render the PDF from the editable HTML user guide."""
 from pathlib import Path
-import shutil
-import sys
 
 from reportlab.lib import colors
 from reportlab.lib.styles import ParagraphStyle
@@ -12,7 +10,7 @@ from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak, Table, TableStyle, Image
 
 ROOT = Path(__file__).resolve().parents[1]
-OUT = ROOT / "output/pdf/TVPaint Layer Exporter - Freelancer Guide.pdf"
+OUT = ROOT / "docs/assets/User Guide.pdf"
 OUT.parent.mkdir(parents=True, exist_ok=True)
 pdfmetrics.registerFont(TTFont("Segoe", "C:/Windows/Fonts/segoeui.ttf"))
 pdfmetrics.registerFont(TTFont("SegoeBold", "C:/Windows/Fonts/segoeuib.ttf"))
@@ -28,7 +26,7 @@ styles = {
     "cell": ParagraphStyle("cell", fontName="Segoe", fontSize=9.5, leading=14, textColor=INK),
 }
 
-SOURCE_HTML = ROOT / "packaging/User Guide.html"
+SOURCE_HTML = ROOT / "docs/assets/User Guide.html"
 
 
 def read_guide():
@@ -103,13 +101,6 @@ for index, (title, kicker, sections) in enumerate(pages):
             story.append(Paragraph(content, styles[kind]))
 
 doc = SimpleDocTemplate(str(OUT), pagesize=A4, rightMargin=48, leftMargin=48, topMargin=61, bottomMargin=57,
-                        title="TVPaint Layer Exporter - Freelancer Guide", author="Fabien Glasse")
-if "--html-only" not in sys.argv:
-    doc.build(story, onFirstPage=page_chrome, onLaterPages=page_chrome)
-
-# Preserve the hand-edited reference. Copy it only to the runtime package.
-shutil.copy2(SOURCE_HTML, ROOT / "portable_exporter/User Guide.html")
-if "--html-only" not in sys.argv:
-    for folder in ("packaging", "portable_exporter"):
-        shutil.copy2(OUT, ROOT / folder / "Freelancer Guide.pdf")
-print("Reference guide copied to runtime package." if "--html-only" in sys.argv else OUT)
+                        title="TVPaint Layer Exporter - User Guide", author="Fabien Glasse")
+doc.build(story, onFirstPage=page_chrome, onLaterPages=page_chrome)
+print(OUT)

@@ -67,7 +67,7 @@ class SetupTests(unittest.TestCase):
                 setup.confirm("S5", "admin copy")
 
     def test_official_bridge_archives(self):
-        bridge = Path(__file__).resolve().parents[1] / "portable_exporter/bridge"
+        bridge = Path(__file__).resolve().parents[1] / "exporter/bridge"
         if not bridge.exists():
             self.skipTest("optional downloaded bridge archives are not in the source checkout")
         for version, filename in [("11.7.3", "tvpaint-rpc-1.1.0-tvp-11.dll"), ("12.1.0", "tvpaint-rpc-1.2.0-tvp-12.1.zip")]:

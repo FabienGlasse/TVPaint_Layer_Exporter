@@ -102,9 +102,9 @@ class GuiTests(unittest.TestCase):
         self.assertEqual((self.root.winfo_width(), self.root.winfo_height()), before)
 
     def test_resume_locks_original_settings(self):
-        from test_v2 import V2Tests
+        from test_export_options import ExportOptionsTests
         output = Path(self.tmp.name)/'interrupted'
-        V2Tests().interrupted(output)
+        ExportOptionsTests().interrupted(output)
         with patch('exporter_ui.filedialog.askdirectory', return_value=str(output)):
             self.ui.load_resume()
         self.assertEqual(self.ui.resume_folder, output)
