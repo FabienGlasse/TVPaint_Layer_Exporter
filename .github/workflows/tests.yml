@@ -1,0 +1,20 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  logic:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Export and resume logic
+        working-directory: portable_exporter
+        run: python -m unittest test_export_layers test_v2 test_manual test_delivery
+      - name: Installer and uninstaller logic
+        working-directory: packaging
+        run: python -m unittest test_setup_steps test_uninstall test_component_cleanup

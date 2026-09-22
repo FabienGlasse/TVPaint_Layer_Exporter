@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+dist/
+output/
+tmp/
+packaging/tools/
+portable_exporter/User Guide.html
+portable_exporter/Freelancer Guide.pdf
+portable_exporter/bridge/*.dll
+portable_exporter/bridge/*.zip
+*.log
+*.tmp
+*.tvpp
+exports/

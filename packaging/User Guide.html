@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>TVPaint Layer Exporter - User Guide</title>
+  <style>
+    body { max-width: 850px; margin: 36px auto; padding: 0 24px; font: 16px/1.6 system-ui; color: #303030; }
+    section { padding: 24px 0; border-top: 5px solid #db7c20; margin-bottom: 30px; }
+    h1 { font-size: 32px; line-height: 1.2; }
+    h2 { font-size: 21px; margin-top: 26px; }
+    .kicker, .small { color: #656565; }
+    .intro { font-size: 19px; }
+    table { border-collapse: collapse; width: 100%; }
+    td { padding: 12px; vertical-align: top; }
+    tr:nth-child(odd) { background: #f5f5f5; }
+    tr:first-child { background: #f3e5d6; font-weight: bold; }
+    .step { padding-left: 14px; }
+    footer { color: #777; }
+  </style>
+</head>
+<body>
+  <section>
+    <p class="kicker">QUICK START / 01</p>
+    <h1>Get ready to export</h1>
+    <p class="intro">TVPaint layer exporter is a fast way to make image sequences. No coding is needed. Start with Auto Mode; or use Manual Mode if you want to fuse layers or have your own way of organising your files.</p>
+    <h2 class="h2">Install once</h2>
+    <p class="step">1. Save your work and close TVPaint. You will need to have an internet connection.</p>
+    <p class="step">2. Extract the package you received. For the guided installer, open <b>Install.bat</b>. For the conventional installer, open <b>TVPaintLayerExporterSetup.exe</b>, finish its wizard and leave the final configuration option selected.</p>
+    <p class="step">3. Each setup stage is explained to you. Choose <b>Y</b> to continue or <b>N</b> to stop; press Enter when prompted. If asked to install Python, let setup do it for you.</p>
+    <p class="step">4. Choose your TVPaint version from the numbered list. If it is missing, choose <b>B</b> and find the TVPaint application on your computer.</p>
+    <p class="step">5. If Windows asks for administrator permission to connect the exporter to TVPaint, approve it or ask your studio/IT contact. Wait for <b>SETUP COMPLETE</b>.</p>
+    <p class="step">6. Open TVPaint again, then use the <b>TVPaint Layer Exporter</b> desktop shortcut.</p>
+    <h2 class="h2">Your first export - Auto Mode</h2>
+    <p class="body">Open the intended project and clip. Keep only that TVPaint application open. The exporter checks the connection and lists the layers; use <b>Refresh connection</b> after changing projects, clips or layers.</p>
+    <p class="body">Auto Mode creates a new dated folder for each export. Each checked layer becomes its own sequence by default. Settings start collapsed: click an <b>Edit...</b> heading to open them. Manual Mode shows all settings. The app always opens in Auto Mode.</p>
+	<p class="body">Check the layers you need, and if needed you can change export settings (such as image format or frame range), then browse to your <b>Output folder</b>. You will be given a filename preview and orange readiness line. Click <b>Export layers</b> and leave TVPaint idle until the export finishes. You will see your layers Activate/Inactivate and restored after export.</p>
+    <p class="small">Windows 64-bit. Intended versions: TVPaint 11.7.3 and 12.1.0.</p>
+	<p class="small">The exporter does not save your project; save your work before exporting.</p>
+  </section>
+
+  <section>
+    <p class="kicker">SETTINGS / 02</p>
+    <h1>Choose your delivery</h1>
+    <p class="intro">The preview stays visible as you adjust settings. Folder rows are dividers, not selectable layers; hidden folders and layers are labelled in the stack.</p>
+    <table>
+      <tr>
+        <td>Setting</td>
+        <td>What it does</td>
+      </tr>
+      <tr>
+        <td>Image format</td>
+        <td>PNG, JPEG, TIFF, TGA or BMP. The exporter is made for image sequences.</td>
+      </tr>
+      <tr>
+        <td>Background</td>
+        <td>Unchecked means transparency. JPEG and BMP need a background, so it is enabled automatically. When checked, the exporter uses TVPaint's background colour, or white if no colour is set.</td>
+      </tr>
+      <tr>
+        <td>Frame range</td>
+        <td>Use the frame numbers shown in TVPaint. Set to <b>Full clip</b> restores the complete range. Both end frames are included, including held drawings.</td>
+      </tr>
+      <tr>
+        <td>Folder prefix / Filename prefix</td>
+        <td>Independent optional prefixes. Folder prefix COMP and Filename prefix SH010 give COMP_Character/SH010_Character_001.png. Folder prefix has no effect with flat output.</td>
+      </tr>
+      <tr>
+        <td>Start numbering / Extra digits</td>
+        <td>Choose the first output number and minimum number of digits. Start 1 with 3 digits gives 001; start 1001 with 4 digits gives 1001.</td>
+      </tr>
+    </table>
+    <h2 class="h2">Export choices</h2>
+    <p class="body"><b>Export as one sequence</b> combines all checked layers into the same images, using their TVPaint stacking order. Unchecked layers are excluded. Leave this off to export each checked layer separately.</p>
+    <p class="body"><b>Put all files directly in the output folder</b> controls the folder layout. Turn it on for images at the export-folder root, or leave it off for one subfolder per sequence. It does not combine layers by itself.</p>
+    <h2 class="h2">Names you can check before export</h2>
+    <p class="body">When combining layers, <b>Sequence name</b> follows the top checked layer. Type your own name for the current selection, or use <b>Use top layer</b> or <b>Use bottom layer</b>. Changing the checked layers resets it to the new top layer. The optional prefix is added before that name.</p>
+    <p class="body">Example: <b>SH010_Character_001.png</b>. Export folders look like <b>TVPaint_export_20260916_143303</b>: date, then local time to the second. If that folder already exists, a simple _2, _3, etc. keeps it separate.</p>
+    <p class="small">Unsupported filename characters are replaced and colliding layer names are made distinct. The orange message and preview show the result. Folder, naming, format and background preferences are remembered.</p>
+  </section>
+
+  <section>
+    <p class="kicker">ARTIST WORKFLOW / 03</p>
+    <h1>Build a delivery in Manual Mode</h1>
+    <p class="intro">Use this when extra working layers need to be delivered together, or if your workflow needs an extra level of control. Each export adds a new sequence to the same session folder.</p>
+    <p class="step">1. Choose <b>Manual Mode</b>, on the left of <b>Refresh connection</b>. <b>Export as one sequence</b> turns on automatically.</p>
+    <p class="step">2. Choose the output location before your first export. Decide whether you want sequence subfolders or all images directly in the export folder.</p>
+    <p class="step">3. Click <b>None</b>, then check the two layers that belong together - for example, <b>Character lineart</b> and <b>Character lineart details</b>. Only checked layers are included, even if other layers are visible in TVPaint.</p>
+    <p class="step">4. Check <b>Sequence name</b>. It defaults to whichever checked layer is highest in the layer list. You can type <b>Character_lineart</b> or another delivery name instead.</p>
+    <p class="step">5. Click <b>Export layers</b>. The first export creates the session folder. The app shows its location and keeps using it for the rest of this Manual session.</p>
+    <p class="step">6. Uncheck those layers, check your next layer - for example, <b>Shadow</b> - and export again. It becomes a separate sequence in that same folder.</p>
+    <p class="step">7. Repeat as needed. You can also turn off <b>Export as one sequence</b> to export a series of individual checked layers separately into the same session folder.</p>
+    <h2 class="h2">If a sequence name already exists</h2>
+    <p class="body">An orange message appears and Export is unavailable. Choose a different sequence name or prefix to keep the existing images. In Manual Mode only, <b>Overwrite layers</b> enables Export and replaces the matching sequence images while keeping the other exports in the session folder. If you are continuing an interrupted export, use <b>Resume interrupted export</b> instead.</p>
+    <h2 class="h2">When the session ends</h2>
+    <p class="body">Switching to <b>Auto Mode</b> releases the session folder and unchecks <b>Export as one sequence</b>. Closing the app also ends the session. Returning to Manual Mode starts a fresh session; previous exports stay on disk.</p>
+    <p class="small">The output location is fixed once the Manual session folder exists. To choose a different location, switch to Auto Mode and then back to Manual Mode. Refreshing the connection does not end the Manual session.</p>
+  </section>
+
+  <section>
+    <p class="kicker">DELIVERY / 04</p>
+    <h1>Finish, cancel and resume</h1>
+    <h2 class="h2">Check the result</h2>
+    <p class="body">The progress bar shows completed frames, with elapsed time and an estimate of time remaining. When it finishes, use <b>Open export folder</b> to inspect the images. You can also check <b>Open delivery report</b> to read the summary.</p>
+    <p class="body"><b>Delivery Report.txt</b> starts with the project, clip and <b>full source stack</b>, in top-to-bottom order. Folders appear in brackets; hidden items are labelled. Each export appends its frame range, format, sequence details, file counts and status to the same report. <b>Layer structure</b> can be of use for a compositing artist to know in which order layers were organised.</p>
+    <p class="body"><b>export_manifest.json</b> is hidden by default in Windows. It holds the latest export's resume record and remains readable by the exporter. Keep it with the folder; there is no need to open or edit it.</p>
+    <h2 class="h2">Cancel or resume</h2>
+    <p class="step">1. Click <b>Cancel</b> and wait for the current operation to stop. The exporter attempts to restore the original layer visibility, current layer, frame and export settings.</p>
+    <p class="step">2. Keep the original project and clip open and unchanged. Choose <b>Resume interrupted export</b>, then select the interrupted export folder.</p>
+    <p class="step">3. Click <b>Resume export</b>. Original export settings are reused. Previously exported frames are checked against TVPaint before missing frames are written; this check can take time.</p>
+    <p class="body">If drawings, existing images, or the scene/layer identity have changed, resume stops to avoid mixing different versions. Start a fresh export instead. In a shared Manual folder, resume the interrupted export <b>before</b> starting another export, because only the latest resume record is kept.</p>
+    <h2 class="h2">Deliver the whole folder</h2>
+    <p class="body">Once every intended export says <b>complete</b> in the report. You can send the dated export folder, including images and report.</p>
+    <h2 class="h2">If something goes wrong</h2>
+    <p class="body">For a connection problem, keep only the intended TVPaint instance open and refresh. Restart TVPaint if necessary. For a path or permission message, choose a shorter writable output location. Send your studio/IT the on-screen error and delivery report if you need help.</p>
+    <h2 class="h2">Uninstall</h2>
+    <p class="body">Close the exporter. In Windows Settings under Apps, select <b>TVPaint Layer Exporter</b> and <b>Uninstall</b>, or open <b>Uninstall.bat</b> in its installation folder. Exported files are always kept.</p>
+    <p class="body">Optional choices remove <b>Python</b> and/or the <b>TVPaint connection component</b>; both are kept by default. Other tools may need them. Close TVPaint before removing its component. Approve Windows permission if asked, and finish Python's official uninstall window.</p>
+  </section>
+
+  <footer>by Fabien Glasse</footer>
+</body>
+</html>
