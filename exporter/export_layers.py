@@ -79,6 +79,8 @@ class TVPaint:
         project_id = g.tv_project_current_id()
         clip_id = g.tv_clip_current_id()
         layers = []
+        colours = {}
+        colour_errors = []
         position = 0
         while True:
             value = self.send("tv_LayerGetID", position).strip()
@@ -88,6 +90,22 @@ class TVPaint:
             kind = getattr(layer, "type", "")
             layers.append(dict(id=layer.id, name=layer.name, visible=layer.visibility,
                                is_folder=getattr(kind, "value", kind) == "folder"))
+            try:
+                index = g.tv_layer_color_get(layer.id)
+                if type(index) is not int or index < 0:
+                    raise ValueError("Invalid colour index")
+                if index not in colours:
+                    colour = g.tv_layer_color_get_color(clip_id, index)
+                    rgb = [colour.color_r, colour.color_g, colour.color_b]
+                    if any(type(value) is not int or not 0 <= value <= 255 for value in rgb):
+                        raise ValueError("Invalid colour values")
+                    colours[index] = dict(colour_index=index, colour_rgb=rgb,
+                                          colour_name=colour.name.strip() or ("Default" if index == 0 else f"Colour {index}"))
+                layers[-1].update(colours[index])
+            except Exception:
+                # A failed colour query must not prevent ordinary layer exports.
+                if not layers[-1]["is_folder"]:
+                    colour_errors.append(layer.name)
             position += 1
         if not layers:
             raise RuntimeError("The current clip has no layers.")
@@ -100,7 +118,8 @@ class TVPaint:
                     fps=project.frame_rate, clip_name=g.tv_clip_name_get(clip_id),
                     frame_offset=self.frame_offset,
                     start=g.tv_first_image() + self.frame_offset,
-                    end=g.tv_last_image() + self.frame_offset, layers=layers)
+                    end=g.tv_last_image() + self.frame_offset, layers=layers,
+                    colour_warning="Colour information could not be read for: " + ", ".join(colour_errors) if colour_errors else "")
 
     def snapshot(self):
         return dict(layer=self.g.tv_layer_current_id(), frame=self.g.tv_layer_image_get(),
@@ -111,7 +130,7 @@ class TVPaint:
         options = options or {}
         self.image_format = options.get("image_format", "PNG")
         # tv_Display returns the previous mode when switching it.
-        state["display"] = self.send("tv_Display", "all" if options.get("combine") else "current")
+        state["display"] = self.send("tv_Display", "all" if options.get("combine") or options.get("colour_mode") else "current")
         if options.get("background", False):
             background = state["background"]
             # A checkerboard is an editing aid, not an export background.
@@ -210,8 +229,16 @@ def export(api, output, cancel=None, progress=lambda text: None, *, options=None
             raise ValueError("Choose an interrupted export folder.")
         if previous.get("identity") != identity(info):
             raise ValueError("This export belongs to a different scene or changed layer list. Start a new export.")
-        options = Options(**previous["options"])
+        options = Options.from_manifest(previous["options"])
     task = plan(info, output, options)
+    if task["options"].get("colour_mode"):
+        def colour_identity(scene):
+            return [(layer["id"], layer.get("colour_index"), layer.get("colour_name"), layer.get("colour_rgb"))
+                    for layer in scene if not layer.get("is_folder")]
+        if expected is not None and colour_identity(info["layers"]) != colour_identity(expected["layers"]):
+            raise ValueError("Layer colours changed. Refresh the connection before exporting.")
+        if previous and colour_identity(info["layers"]) != colour_identity(previous["source_stack"]):
+            raise ValueError("Layer colours changed since this export. Start a new export.")
     image_format = task["options"]["image_format"]
     check_writable(output if resume or (reuse_folder and output.exists()) else output.parent)
     if not resume:

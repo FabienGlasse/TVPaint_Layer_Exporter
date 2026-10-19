@@ -8,6 +8,8 @@ TVPaint Layer Exporter will lists the current clip's layers, lets you choose set
 
 The TVPaint connection uses [BRUNCH Studio's tvpaint-rpc](https://github.com/brunchstudio/tvpaint-rpc). Their work makes it possible for the exporter to read the current clip and send export commands to TVPaint. The installer downloads the matching connection component from their project.
 
+The layer list shows TVPaint's colour labels. Choose **AUTO** for individual layer exports, **MANUAL** to build a delivery over several exports, or **LAYER COLORS** for one combined sequence per colour group. The active mode is orange. Layer Colors starts with visible coloured layers selected; use the group checkboxes or individual layers to adjust the selection. Each export creates a new folder. Sequences use the top checked layer's name by default; naming settings also offer the bottom layer, TVPaint's color group names, or approximate universal color names such as Red, Green and Blue. Groups stay separate even when their approximate names match. Hover over buttons for help, or click **?** beside **Connect / Refresh** for the guided tutorial.
+
 ## Get started
 
 Download one of the two packages from [Releases](https://github.com/FabienGlasse/TVPaint_Layer_Exporter/releases):

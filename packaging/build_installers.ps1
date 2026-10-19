@@ -14,7 +14,7 @@ foreach ($name in @('User Guide.html','User Guide.pdf')) {
     Copy-Item -LiteralPath (Join-Path $guide $name) -Destination (Join-Path $batFolder $name) -Force
     $packageFiles += Join-Path $batFolder $name
 }
-foreach ($name in @('export_layers.py','export_options.py','exporter_ui.py','requirements.txt','TVPaint_Exporter_Logo.png','TVPaint_Exporter_Logo.ico')) {
+foreach ($name in @('export_layers.py','export_options.py','colour_names.py','exporter_ui.py','ui_help.py','requirements.txt','TVPaint_Exporter_Logo.png','TVPaint_Exporter_Logo.ico')) {
     Copy-Item -LiteralPath (Join-Path $workspace "exporter\$name") -Destination (Join-Path $batFolder $name) -Force
     $packageFiles += Join-Path $batFolder $name
 }

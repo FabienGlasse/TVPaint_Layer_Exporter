@@ -8,6 +8,7 @@ import os
 import tempfile
 import re
 from datetime import datetime
+from colour_names import universal_colour_name
 
 # TVPaint save modes, file extensions and transparency support.
 IMAGE_FORMATS = {
@@ -33,6 +34,8 @@ class Options:
     combine: bool = False
     sequence_name: str = ""
     folder_prefix: str = ""
+    colour_mode: bool = False
+    colour_naming: str = "top"
 
     def __post_init__(self):
         if self.layer_ids is not None and (not isinstance(self.layer_ids, list) or
@@ -46,6 +49,18 @@ class Options:
             raise ValueError("Choose a supported image format and background option.")
         if type(self.combine) is not bool or not isinstance(self.sequence_name, str):
             raise ValueError("The sequence settings are invalid.")
+        if type(self.colour_mode) is not bool:
+            raise ValueError("The colour mode setting is invalid.")
+        if self.colour_naming not in ("colour", "universal", "top", "bottom"):
+            raise ValueError("Choose color group names, universal color names, the top layer or the bottom layer for sequence names.")
+
+    @classmethod
+    def from_manifest(cls, values):
+        # Colour exports made before naming choices were introduced used group names.
+        values = dict(values)
+        if values.get("colour_mode"):
+            values.setdefault("colour_naming", "colour")
+        return cls(**values)
 
 
 def identity(info):
@@ -76,7 +91,24 @@ def plan(info, output, options=None):
         raise ValueError("Select at least one available layer.")
     notices = []
     selected_ids = [x["id"] for x in layers]
-    if options.combine:
+    if options.colour_mode:
+        groups = {}
+        for layer in layers:
+            index = layer.get("colour_index")
+            if index is None:
+                raise ValueError("Colour information is unavailable for a selected layer. Refresh the connection or use Auto Mode.")
+            groups.setdefault(index, []).append(layer)
+        def group_name(index, members):
+            if options.colour_naming == "universal":
+                return universal_colour_name(members[0].get("colour_rgb"))
+            if options.colour_naming == "colour":
+                return members[0].get("colour_name") or f"Colour {index}"
+            return members[-1 if options.colour_naming == "bottom" else 0]["name"]
+        layers = [dict(id=members[0]["id"], name=group_name(index, members),
+                       visible=True, colour_index=index, colour_rgb=members[0].get("colour_rgb"),
+                       source_ids=[x["id"] for x in members], source_names=[x["name"] for x in members])
+                  for index, members in groups.items()]
+    elif options.combine:
         name = options.sequence_name.strip() or layers[0]["name"]
         layers = [dict(id=layers[0]["id"], name=name, visible=True,
                        source_ids=selected_ids, source_names=[x["name"] for x in layers])]
@@ -91,7 +123,9 @@ def plan(info, output, options=None):
         notices.append(f"{options.image_format} uses a background because it cannot store transparency.")
     opts = Options(selected_ids, first, last, prefix, options.numbering, options.padding,
                    options.image_format, background, options.layer_folders,
-                   options.combine, layers[0]["name"] if options.combine else "", folder_prefix)
+                   options.combine and not options.colour_mode,
+                   layers[0]["name"] if options.combine and not options.colour_mode else "", folder_prefix,
+                   options.colour_mode, options.colour_naming)
     result = dict(options=asdict(opts), layers=layers, total=len(layers) * (last-first+1), notices=notices)
     for layer in layers:
         path = frame_path(output, layer, last, result["options"])
@@ -198,8 +232,7 @@ def write_settings(values):
 def atomic_json(path, data, *, hidden=False):
     temporary = path.with_suffix(".tmp")
     temporary.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
-    temporary.replace(path)
-    if hidden and os.name == "nt":
+    if os.name == "nt" and (hidden or path.exists()):
         import ctypes
         from ctypes import wintypes
         kernel = ctypes.WinDLL("kernel32", use_last_error=True)
@@ -208,8 +241,20 @@ def atomic_json(path, data, *, hidden=False):
         kernel.SetFileAttributesW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD]
         kernel.SetFileAttributesW.restype = wintypes.BOOL
         attributes = kernel.GetFileAttributesW(str(path))
-        if attributes == 0xFFFFFFFF or not kernel.SetFileAttributesW(str(path), attributes | 0x2):
+        was_hidden = attributes != 0xFFFFFFFF and bool(attributes & 0x2)
+        # Windows refuses to replace a hidden destination. Clear only that bit
+        # during the atomic rename, then restore it even if the rename fails.
+        if was_hidden and not kernel.SetFileAttributesW(str(path), (attributes & ~0x2) or 0x80):
             raise ctypes.WinError(ctypes.get_last_error())
+        try:
+            temporary.replace(path)
+        finally:
+            if (hidden or was_hidden) and path.exists():
+                current = kernel.GetFileAttributesW(str(path))
+                if current == 0xFFFFFFFF or not kernel.SetFileAttributesW(str(path), current | 0x2):
+                    raise ctypes.WinError(ctypes.get_last_error())
+    else:
+        temporary.replace(path)
 
 
 def report_header(manifest):
@@ -218,7 +263,12 @@ def report_header(manifest):
              f"Clip: {manifest.get('clip_name') or manifest['clip_id']}", "", "Layer structure (top to bottom):"]
     for layer in manifest.get("source_stack", manifest["layers"]):
         name = f"[{layer['name']}]" if layer.get("is_folder") else "- " + layer["name"]
-        lines.append(name + (" (hidden)" if not layer.get("visible", True) else ""))
+        colour = layer.get("colour_name")
+        rgb = layer.get("colour_rgb")
+        suffix = f" — {colour}" if colour else ""
+        if rgb:
+            suffix += " (#" + "".join(f"{value:02X}" for value in rgb) + ")"
+        lines.append(name + (" (hidden)" if not layer.get("visible", True) else "") + suffix)
     return "\n".join(lines) + "\n"
 
 
@@ -230,7 +280,7 @@ def report(manifest):
              f"Frames: {opts['first']}–{opts['last']}",
              f"Numbering starts at: {opts['numbering']}",
              f"Image format: {image_format}",
-             f"Layout: {'One folder per layer' if opts.get('layer_folders', True) else 'All images in the output folder'}",
+             f"Layout: {'One folder per colour group' if opts.get('colour_mode') else 'One folder per layer'}" if opts.get('layer_folders', True) else "Layout: All images in the output folder",
              f"Background: {manifest.get('background_description', 'Included' if opts.get('background') else 'None (transparent)')}",
              f"Files: {sum(x['frames_written'] for x in manifest['layers'])} / {manifest['total']}", "",
              "Layers / folders:"]
@@ -240,7 +290,6 @@ def report(manifest):
             prefix = opts['prefix'] + '_' if opts['prefix'] else ''
             destination = './' + prefix + layer.get('filename', layer['folder']) + '_…'
         lines.append(f"  {layer['name']} → {destination} ({layer['frames_written']} {image_format} files)")
-    for layer in manifest["layers"]:
         if layer.get("source_names"):
             lines.append("  Combined layers: " + ", ".join(layer["source_names"]))
     lines += ["", *manifest.get("notices", [])]

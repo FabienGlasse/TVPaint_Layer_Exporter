@@ -3,6 +3,7 @@ from pathlib import Path
 import json
 import os
 import queue
+import re
 import threading
 import tkinter as tk
 from tkinter import ttk, filedialog
@@ -10,6 +11,7 @@ from datetime import datetime
 
 from export_options import Options, IMAGE_FORMATS, plan, frame_path, check_writable, read_settings, write_settings, new_output_folder, check_sequence_conflicts, sequence_conflicts
 from export_layers import TVPaint, export
+from ui_help import Tooltip, Tutorial
 
 
 class ExporterWindow:
@@ -41,6 +43,9 @@ class ExporterWindow:
         self.mode = tk.StringVar(value="Auto Mode")
         self.active_mode = "Auto Mode"
         self.combine = tk.BooleanVar(value=False)
+        self.colour_naming = tk.StringVar(value="top")
+        self.tooltips = []
+        self.tutorial = None
         self.sequence_name = tk.StringVar()
         self.session_status = tk.StringVar(value="Auto Mode creates a new folder for each export.")
         self.format_note = tk.StringVar()
@@ -50,10 +55,12 @@ class ExporterWindow:
         self.scene = tk.StringVar()
         self.preview = tk.StringVar(value="Connect to TVPaint to preview filenames.")
         self.notice = tk.StringVar()
-        self.status = tk.StringVar(value="Choose your layers and output folder.")
+        self.status = tk.StringVar()
         self.counter = tk.StringVar(value="0 / 0 frames")
         self.timing = tk.StringVar(value="Elapsed 0:00  ·  Remaining —")
         self.checks = {}
+        self.colour_checks = {}
+        self.swatches = []
         self.controls = []
         root.title("TVPaint Layer Exporter")
         root.geometry("940x840")
@@ -78,6 +85,9 @@ class ExporterWindow:
         style.configure("TCheckbutton", indicatorbackground=field, indicatorforeground=white)
         style.map("TCheckbutton", background=[("active", grey)], foreground=[("disabled", disabled)],
                   indicatorbackground=[("selected", orange), ("disabled", "#494949")])
+        style.configure("TRadiobutton", indicatorbackground=field)
+        style.map("TRadiobutton", background=[("active", grey)], foreground=[("disabled", disabled)],
+                  indicatorbackground=[("disabled", "#494949"), ("selected", orange)])
         style.configure("TLabelframe.Label", foreground=white)
         style.configure("TCombobox", fieldbackground=field, foreground=white, arrowcolor=white)
         style.map("TCombobox", fieldbackground=[("readonly", field), ("disabled", grey)],
@@ -93,7 +103,13 @@ class ExporterWindow:
         style.configure("Scene.TLabel", foreground=orange)
         style.configure("Subtle.TLabel", foreground="#858585")
         style.configure("Section.TButton", anchor="w", padding=(8, 2), background=grey)
+        style.configure("Quiet.TButton", background=grey, foreground="#929292", borderwidth=0, padding=(5, 3))
+        style.map("Quiet.TButton", foreground=[("disabled", disabled), ("active", white)],
+                  background=[("active", "#505050")])
         style.configure("Notice.TLabel", foreground=orange)
+        style.configure("ActiveMode.TButton", background=orange, foreground=field)
+        style.map("ActiveMode.TButton", background=[("disabled", "#414141"), ("active", "#ffad5c")],
+                  foreground=[("disabled", disabled)])
         style.configure("Accent.Horizontal.TProgressbar", background=orange, lightcolor=orange,
                         darkcolor=orange, bordercolor=field, troughcolor=field)
         style.layout("Layers.Vertical.TScrollbar", [("Vertical.Scrollbar.trough", {"sticky": "ns", "children": [
@@ -116,10 +132,18 @@ class ExporterWindow:
         connection_tools.pack(side="right", anchor="n")
         buttons = ttk.Frame(connection_tools)
         buttons.pack(anchor="e")
-        self.refresh_button = self.button(buttons, "Refresh connection", self.connect)
+        self.refresh_button = self.button(buttons, "Connect", self.connect)
         self.refresh_button.pack(side="right")
-        self.mode_button = self.button(buttons, "Manual Mode", self.toggle_mode)
-        self.mode_button.pack(side="right", padx=(0, 8))
+        self.help_button = self.button(buttons, "?", self.start_tutorial)
+        self.help_button.configure(width=3)
+        self.help_button.pack(side="right", padx=(14, 8))
+        self.mode_buttons = {}
+        for label, mode in (("AUTO", "Auto Mode"), ("MANUAL", "Manual Mode"), ("LAYER COLORS", "Colour Mode")):
+            button = self.button(buttons, label, lambda value=mode: self.choose_mode(value))
+            button.pack(side="left", padx=(0, 5))
+            self.mode_buttons[mode] = button
+        self.mode_button = self.mode_buttons["Manual Mode"]
+        self.update_mode_buttons()
         ttk.Label(connection_tools, textvariable=self.session_status, style="Subtle.TLabel",
                   wraplength=390, justify="right").pack(anchor="e", pady=(4, 0))
         body = ttk.Frame(box)
@@ -206,6 +230,14 @@ class ExporterWindow:
         self.name_reset.pack(side="left", padx=(6, 0))
         self.name_bottom = self.button(row, "Use bottom layer", self.use_bottom_layer)
         self.name_bottom.pack(side="left", padx=(6, 0))
+        colour_naming = self.settings_section(right, "colour_naming", "Edit sequence naming")
+        self.colour_name_radios = []
+        for text, value in (("Use color group names", "colour"), ("Use universal color names", "universal"),
+                            ("Use top layer", "top"), ("Use bottom layer", "bottom")):
+            radio = ttk.Radiobutton(colour_naming, text=text, variable=self.colour_naming, value=value)
+            radio.pack(anchor="w", pady=2)
+            self.controls.append(radio)
+            self.colour_name_radios.append(radio)
         preview_box = self.preview_box = ttk.Frame(right, padding=12, relief="solid", borderwidth=1)
         preview_box.pack(side="bottom", fill="x")
         ttk.Label(preview_box, text="Filename preview", style="Muted.TLabel").pack(anchor="w", pady=(0, 4))
@@ -235,6 +267,7 @@ class ExporterWindow:
         self.start_button = self.button(row, "Export layers", self.start)
         self.start_button.pack(side="left")
         self.resume_button = self.button(row, "Resume interrupted export…", self.load_resume)
+        self.resume_button.configure(style="Quiet.TButton")
         self.resume_button.pack(side="left", padx=8)
         self.cancel_button = ttk.Button(row, text="Cancel", command=self.cancel.set, state="disabled")
         self.cancel_button.pack(side="right")
@@ -255,9 +288,10 @@ class ExporterWindow:
         self.open_button.pack(side="left")
         self.report_button = ttk.Button(bottom, text="Open delivery report", command=self.open_report, state="disabled")
         self.report_button.pack(side="left", padx=8)
-        ttk.Label(bottom, text="by Fabien Glasse", foreground="#777777", font=("Segoe UI", 10, "italic")).pack(side="right")
-        for value in (self.parent, self.prefix, self.folder_prefix, self.numbering, self.padding, self.first, self.last, self.image_format, self.background, self.flat_output, self.combine):
+        ttk.Label(bottom, text="by Fabien Glasse", foreground="#565656", font=("Segoe UI", 10, "italic")).pack(side="right")
+        for value in (self.parent, self.prefix, self.folder_prefix, self.numbering, self.padding, self.first, self.last, self.image_format, self.background, self.flat_output, self.combine, self.colour_naming):
             value.trace_add("write", self.schedule_check)
+        self.add_tooltips()
         self.sequence_name.trace_add("write", self.name_edited)
         root.protocol("WM_DELETE_WINDOW", self.close)
         root.after(100, self.poll)
@@ -267,16 +301,74 @@ class ExporterWindow:
     def button(self, parent, text, command):
         widget = ttk.Button(parent, text=text, command=command)
         self.controls.append(widget)
+        explanations = {
+            "AUTO": 'Auto Mode exports checked layers separately.',
+            "MANUAL": 'Manual Mode builds a delivery over several exports in the same folder.',
+            "LAYER COLORS": 'Layer colors use TVPaint color labels to build your delivery.',
+            "Connect": "Connect to TVPaint and load the current clip, layers and colours.",
+            "Refresh": "Reload the current clip, layers and colours from TVPaint.",
+            "?": "Walk through the exporter with a short guided tutorial.",
+            "All": 'Check all available layers, including hidden layers and default groups.',
+            "Visible": "Check only layers shown as visible in TVPaint.",
+            "None": "Uncheck every layer.",
+            "Set to Full clip": 'Get the first and last frames of the current clip.',
+            "Use top layer": "Use the highest checked layer's name.",
+            "Use bottom layer": "Use the lowest checked layer's name.",
+            "Browse…": "Choose where the export folder will be created.",
+            "Overwrite layers": "Replace the matching sequence images in this Manual session.",
+            "Export layers": '',
+            "Resume interrupted export…": "Choose an interrupted export folder to verify existing frames and continue.",
+        }
+        self.tooltips.append(Tooltip(widget, explanations.get(text, text)))
         return widget
+
+    def add_tooltips(self):
+        for widget, text in (
+            (self.combine_check, "Combine all checked layers into one image sequence."),
+            (self.flat_check, 'Exports directly in the export folder, without subfolders.'),
+            (self.background_check, ''),
+            (self.cancel_button, "Stop after the current operation and restore TVPaint's settings."),
+            (self.open_button, "Open the latest export folder in Windows Explorer."),
+            (self.report_button, "Open the delivery report for the latest export."),
+        ):
+            self.tooltips.append(Tooltip(widget, text))
+        for radio, text in zip(self.colour_name_radios, (
+            "Name each sequence after its TVPaint colour group name.",
+            "Name each sequence after the nearest universal color, such as Red, Green or Blue.",
+            "Name each colour-group sequence after its highest checked layer.",
+            "Name each colour-group sequence after its lowest checked layer.",
+        )):
+            self.tooltips.append(Tooltip(radio, text))
+
+    def start_tutorial(self):
+        if self.tutorial and self.tutorial.window.winfo_exists():
+            self.tutorial.window.lift()
+            return
+        self.tutorial = Tutorial(self.root, [
+            (self.refresh_button, "Connect to TVPaint", 'Open your project and clip in TVPaint if needed, then click Connect or Refresh. The project name and layer list will update. Refresh again after changing any clip or layers.'),
+            (self.mode_buttons["Auto Mode"], "Choose a mode", 'AUTO exports checked layers separately into a new folder. MANUAL keeps a folder for several exports. LAYER COLORS combines layers by their TVPaint colour group. The orange button shows the active mode.'),
+            (self.canvas, "Choose layers", 'Check the layers you want to deliver. You can see folders, visible/hidden statuses and layer colors. In LAYER COLORS, group checkboxes select a whole colour group, and individual checkboxes let you refine it.'),
+            (self.settings_panel, "Adjust export settings", 'Click an Edit heading to open its settings. Set things like image format, background, frame range or prefixes if needed.'),
+            (self.parent_entry, "Choose the output folder", 'Use Browse to choose a writable folder. AUTO and LAYER COLORS create a new dated folder for each export. MANUAL reuses its folder until you change mode.'),
+            (self.start_button, "Export", "When you're ready, click Export layers. Leave TVPaint idle while exporting, it will check and uncheck layers before reverting your scene back to its original state."),
+            (self.bar, "Follow progress", 'The orange bar counts exported frames. Cancel stops safely after the current operation. Resume interrupted export lets you continue using the original scene and settings.'),
+            (self.open_button, "Check your delivery", 'When the export finishes, Open export folder shows your images. Open delivery report shows the layer structure, exported sequences and completion status.'),
+        ])
+
+    @staticmethod
+    def connection_error_text(text):
+        text = re.sub(r"\btvpaint\b", "TVPaint", str(text), flags=re.I)
+        return re.sub(r"\s+!", "!", text)
 
     def settings_section(self, parent, key, title):
         holder = ttk.Frame(parent)
         holder.pack(fill="x", pady=(0, 3))
         toggle = ttk.Button(holder, text="▸  " + title, style="Section.TButton",
                             command=lambda: self.toggle_section(key))
+        self.tooltips.append(Tooltip(toggle, {'format': 'Image format and background colour settings.', 'frames': 'Frame range and numbering settings.', 'prefixes': 'Folder / filename prefixes settings.', 'sequence': 'Sequence name settings.', 'colour_naming': 'Sequence naming settings.'}[key]))
         toggle.pack(fill="x")
         content = ttk.Frame(holder, padding=(2, 6, 2, 6))
-        self.sections[key] = dict(toggle=toggle, content=content, title=title, opened=False)
+        self.sections[key] = dict(holder=holder, toggle=toggle, content=content, title=title, opened=False)
         return content
 
     def toggle_section(self, key):
@@ -286,19 +378,19 @@ class ExporterWindow:
         self.root.after_idle(self.set_minimum_size)
 
     def configure_sections(self, reset=True):
-        manual = self.mode.get() == "Manual Mode"
-        self.settings_panel.configure(padding=12 if manual else 0,
-                                      relief="solid" if manual else "flat", borderwidth=1 if manual else 0)
-        self.preview_box.configure(padding=(0, 12, 0, 0) if manual else 12,
-                                   relief="flat" if manual else "solid", borderwidth=0 if manual else 1)
-        for item in self.sections.values():
+        colour = self.mode.get() == "Colour Mode"
+        self.settings_panel.configure(padding=0, relief="flat", borderwidth=0)
+        self.preview_box.configure(padding=12, relief="solid", borderwidth=1)
+        for key, item in self.sections.items():
             if reset:
-                item["opened"] = manual
-            if manual:
-                item["toggle"].pack_forget()
-            else:
-                item["toggle"].pack(fill="x", before=item["content"] if item["content"].winfo_manager() else None)
-            if manual or item["opened"]:
+                item["opened"] = False
+            if (key == "sequence" and colour) or (key == "colour_naming" and not colour):
+                item["content"].pack_forget()
+                item["holder"].pack_forget()
+                continue
+            item["holder"].pack(fill="x", pady=(0, 3), before=self.preview_box)
+            item["toggle"].pack(fill="x", before=item["content"] if item["content"].winfo_manager() else None)
+            if item["opened"]:
                 item["content"].pack(fill="x")
             else:
                 item["content"].pack_forget()
@@ -327,6 +419,8 @@ class ExporterWindow:
             return
         self.set_busy(True)
         self.connection.set("Checking TVPaint…")
+        if self.status.get().startswith("Connection details:"):
+            self.status.set("Checking TVPaint…")
         def worker():
             try:
                 self.events.put(("connected", TVPaint().inspect()))
@@ -339,27 +433,85 @@ class ExporterWindow:
         self.resume_folder = None
         self.start_button.configure(text="Export layers")
         self.checks.clear()
-        for widget in self.layer_box.winfo_children():
-            widget.destroy()
         for layer in info["layers"]:
-            if layer.get("is_folder"):
-                divider = ttk.Frame(self.layer_box)
-                divider.pack(fill="x", pady=(9, 5))
-                label = "[" + layer["name"] + "]" + ("  (hidden)" if not layer["visible"] else "")
-                ttk.Label(divider, text=label, style="Muted.TLabel").pack(side="left")
-                ttk.Separator(divider, orient="horizontal").pack(side="left", fill="x", expand=True, padx=(8, 0))
-                continue
-            value = tk.BooleanVar(value=True)
-            self.checks[layer["id"]] = value
-            label = layer["name"] + ("  (hidden)" if not layer["visible"] else "")
-            check = ttk.Checkbutton(self.layer_box, text=label, variable=value, command=self.schedule_check)
-            check.pack(anchor="w", pady=3)
-            check.bind("<MouseWheel>", self.scroll_layers)
+            if not layer.get("is_folder"):
+                self.checks[layer["id"]] = tk.BooleanVar(value=True)
+        if self.mode.get() == "Colour Mode":
+            self.colour_defaults()
+        self.render_layer_list()
         self.full_range()
         version = " ".join(map(str, info["version"]))
         project = Path(info.get("project_path", "")).name or str(info["project_id"])
         self.connection.set(f"Connected · {version}")
         self.scene.set(f"{project} / {info.get('clip_name', info['clip_id'])}")
+        self.update_connection_button()
+        self.status.set("")
+
+    def colour_defaults(self):
+        for layer in self.info["layers"]:
+            if layer["id"] in self.checks:
+                self.checks[layer["id"]].set(bool(layer["visible"] and layer.get("colour_index", 0)))
+
+    def swatch(self, layer):
+        rgb = layer.get("colour_rgb")
+        image = tk.PhotoImage(width=12, height=12)
+        image.put("#" + "".join(f"{value:02x}" for value in rgb) if rgb else "#686868", to=(0, 0, 12, 12))
+        self.swatches.append(image)
+        return image
+
+    def render_layer_list(self):
+        self.colour_checks.clear()
+        for widget in self.layer_box.winfo_children():
+            widget.destroy()
+        self.swatches.clear()
+        if self.mode.get() == "Colour Mode":
+            groups = {}
+            for layer in self.info["layers"]:
+                if not layer.get("is_folder") and layer.get("colour_index") is not None:
+                    groups.setdefault(layer["colour_index"], []).append(layer)
+            ttk.Label(self.layer_box, text="Colour groups", style="Muted.TLabel").pack(anchor="w")
+            for index, members in groups.items():
+                value = tk.BooleanVar()
+                name = members[0].get("colour_name") or f"Colour {index}"
+                check = ttk.Checkbutton(self.layer_box, text=f"{name} · {len(members)} {'layer' if len(members) == 1 else 'layers'}",
+                                       image=self.swatch(members[0]), compound="left", variable=value,
+                                       command=lambda key=index: self.select_colour(key))
+                check.pack(anchor="w", pady=3)
+                check.bind("<MouseWheel>", self.scroll_layers)
+                self.colour_checks[index] = (value, check)
+            ttk.Separator(self.layer_box).pack(fill="x", pady=8)
+            ttk.Label(self.layer_box, text="Layer stack", style="Muted.TLabel").pack(anchor="w")
+        for layer in self.info["layers"]:
+            if layer.get("is_folder"):
+                divider = ttk.Frame(self.layer_box)
+                divider.pack(fill="x", pady=(9, 5))
+                label = "[" + layer["name"] + "]" + ("  (hidden)" if not layer["visible"] else "")
+                ttk.Label(divider, text=label, style="Muted.TLabel", image=self.swatch(layer), compound="left").pack(side="left")
+                ttk.Separator(divider, orient="horizontal").pack(side="left", fill="x", expand=True, padx=(8, 0))
+                continue
+            value = self.checks[layer["id"]]
+            label = layer["name"] + ("  (hidden)" if not layer["visible"] else "")
+            check = ttk.Checkbutton(self.layer_box, text=label, variable=value, command=self.schedule_check,
+                                    image=self.swatch(layer), compound="left")
+            check.pack(anchor="w", pady=3)
+            check.bind("<MouseWheel>", self.scroll_layers)
+        self.sync_colour_checks()
+
+    def select_colour(self, index):
+        selected = self.colour_checks[index][0].get()
+        for layer in self.info["layers"]:
+            if layer["id"] in self.checks and layer.get("colour_index") == index:
+                self.checks[layer["id"]].set(selected)
+        self.schedule_check()
+
+    def sync_colour_checks(self):
+        if not self.info:
+            return
+        for index, (variable, widget) in self.colour_checks.items():
+            states = [self.checks[layer["id"]].get() for layer in self.info["layers"]
+                      if layer["id"] in self.checks and layer.get("colour_index") == index]
+            variable.set(all(states))
+            widget.state(["alternate" if any(states) and not all(states) else "!alternate"])
 
     def full_range(self):
         if self.info:
@@ -371,7 +523,8 @@ class ExporterWindow:
             for layer in self.info["layers"]:
                 if layer["id"] not in self.checks:
                     continue
-                self.checks[layer["id"]].set(mode == "all" or (mode == "visible" and layer["visible"]))
+                available = self.mode.get() != "Colour Mode" or layer.get("colour_index") is not None
+                self.checks[layer["id"]].set(available and (mode == "all" or (mode == "visible" and layer["visible"])))
             self.schedule_check()
 
     def browse(self):
@@ -384,7 +537,9 @@ class ExporterWindow:
             return Options([key for key, value in self.checks.items() if value.get()],
                            int(self.first.get()), int(self.last.get()), self.prefix.get(),
                            int(self.numbering.get()), int(self.padding.get()), self.image_format.get(), self.background.get(), not self.flat_output.get(),
-                           self.combine.get(), self.sequence_name.get() if self.combine.get() else "", self.folder_prefix.get())
+                           self.combine.get(), self.sequence_name.get() if self.combine.get() else "", self.folder_prefix.get(),
+                           self.mode.get() == "Colour Mode",
+                           self.colour_naming.get())
         except ValueError:
             raise ValueError("Enter whole numbers for the frame range and filename numbering.") from None
 
@@ -401,6 +556,8 @@ class ExporterWindow:
         if self.busy:
             return False
         self.sync_format()
+        self.sync_colour_checks()
+        self.combine_check.configure(state="disabled" if self.mode.get() == "Colour Mode" else "normal")
         self.sync_sequence_name()
         self.sections["sequence"]["toggle"].configure(state="normal" if self.combine.get() else "disabled")
         for widget in (self.sequence_entry, self.name_reset, self.name_bottom):
@@ -411,11 +568,14 @@ class ExporterWindow:
             widget.configure(state="disabled" if self.session_folder else "normal")
         try:
             if not self.info:
-                raise ValueError("Open TVPaint with your scene, then refresh the connection.")
+                raise ValueError("Open TVPaint with your scene, then click Connect.")
+            if self.mode.get() == "Colour Mode" and not any(
+                    layer.get("colour_index") is not None for layer in self.info["layers"] if not layer.get("is_folder")):
+                raise ValueError("Colour information is unavailable. Refresh the connection or use Auto Mode.")
             if self.resume_folder:
                 self.notice.set("Resume uses the original settings. Previous frames will be checked before continuing.")
                 for widget in self.controls:
-                    if widget not in (self.refresh_button, self.mode_button, self.start_button, self.resume_button):
+                    if widget not in (self.refresh_button, *self.mode_buttons.values(), self.start_button, self.resume_button):
                         widget.configure(state="disabled")
                 for widget in self.layer_box.winfo_children():
                     if isinstance(widget, ttk.Checkbutton):
@@ -442,6 +602,8 @@ class ExporterWindow:
                     task["notices"].insert(0, "The matching sequence will be overwritten; other exports will be kept.")
             ready = f"Ready • {len(task['options']['layer_ids'])} layers • {len(task['layers'])} sequence(s) • {task['total']} {task['options']['image_format']} files"
             self.notice.set("\n".join([ready, *task["notices"][:3]]))
+            if self.info.get("colour_warning"):
+                self.notice.set(self.notice.get() + "\n" + self.info["colour_warning"])
             self.start_button.configure(state="normal")
             return True
         except (ValueError, OSError) as exc:
@@ -457,7 +619,7 @@ class ExporterWindow:
             data = json.loads((Path(selected) / "export_manifest.json").read_text(encoding="utf-8"))
             if not isinstance(data, dict) or data.get("schema") != 2 or data.get("status") == "complete":
                 raise ValueError("Choose an interrupted export folder.")
-            options = Options(**data["options"])
+            options = Options.from_manifest(data["options"])
             if not self.info:
                 raise ValueError("Connect to TVPaint first.")
             from export_options import identity
@@ -465,6 +627,10 @@ class ExporterWindow:
                 raise ValueError("Connect to the original scene with the same layer list before resuming.")
             task = plan(self.info, selected, options)
             check_writable(selected)
+            if options.colour_mode:
+                self.choose_mode("Colour Mode")
+            elif self.mode.get() == "Colour Mode":
+                self.choose_mode("Auto Mode")
             self.resume_folder = Path(selected)
             self.first.set(str(options.first))
             self.last.set(str(options.last))
@@ -476,6 +642,7 @@ class ExporterWindow:
             self.background.set(options.background)
             self.flat_output.set(not options.layer_folders)
             self.combine.set(options.combine)
+            self.colour_naming.set(options.colour_naming)
             self.name_overridden = True
             self.updating_name = True
             self.sequence_name.set(options.sequence_name)
@@ -485,7 +652,7 @@ class ExporterWindow:
             self.last_selection = tuple(key for key, value in self.checks.items() if value.get())
             self.preview.set(str(frame_path(Path("<export folder>"), task["layers"][0], options.first, task["options"])))
             self.start_button.configure(text="Resume export")
-            self.status.set("Resume selected. Refresh the connection to return to a new export.")
+            self.status.set("Resume selected. Refresh to return to a new export.")
             # Settings are fixed for a resume, but refresh and resume chooser remain usable.
             self.validate()
         except (OSError, ValueError, KeyError, TypeError) as exc:
@@ -545,9 +712,10 @@ class ExporterWindow:
                     self.set_busy(False)
                 elif kind == "connection_error":
                     self.info = None
-                    self.connection.set("Not connected · Open TVPaint and refresh. If it is already open, restart it.")
+                    self.connection.set("Not connected · Open TVPaint and click Connect. If it is already open, restart it.")
+                    self.update_connection_button()
                     self.scene.set("")
-                    self.status.set("Connection details: " + data)
+                    self.status.set("Connection details: " + self.connection_error_text(data))
                     self.set_busy(False)
                 elif kind == "progress":
                     self.bar.configure(maximum=data["total"], value=data["completed"])
@@ -622,11 +790,22 @@ class ExporterWindow:
         self.resume_folder = None
         self.session_folder = None
         self.combine.set(self.mode.get() == "Manual Mode")
-        self.mode_button.configure(text="Auto Mode" if self.mode.get() == "Manual Mode" else "Manual Mode")
+        if self.mode.get() == "Colour Mode":
+            self.combine_check.pack_forget()
+        else:
+            self.combine_check.pack(side="left", padx=(0, 18), before=self.flat_check)
+        self.update_mode_buttons()
+        if self.info:
+            if self.mode.get() == "Colour Mode":
+                self.colour_defaults()
+            self.render_layer_list()
         self.overwrite_key = None
         self.name_overridden = False
-        self.session_status.set("Manual Mode keeps the same folder until you return to Auto Mode."
-                                if self.mode.get() == "Manual Mode" else "Auto Mode creates a new folder for each export.")
+        self.session_status.set({
+            "Manual Mode": "Manual Mode keeps the same folder until you change mode.",
+            "Colour Mode": "Color mode creates a sequence per checked colour group",
+            "Auto Mode": "Auto Mode creates a new folder for each export.",
+        }[self.mode.get()])
         self.start_button.configure(text="Export layers")
         self.configure_sections()
         self.root.after_idle(self.set_minimum_size)
@@ -635,6 +814,24 @@ class ExporterWindow:
     def toggle_mode(self):
         self.mode.set("Manual Mode" if self.mode.get() == "Auto Mode" else "Auto Mode")
         self.mode_changed()
+
+    def choose_mode(self, mode):
+        if self.busy:
+            return
+        self.mode.set(mode)
+        self.mode_changed()
+
+    def update_mode_buttons(self):
+        for mode, button in self.mode_buttons.items():
+            button.configure(style="ActiveMode.TButton" if self.mode.get() == mode else "TButton")
+
+    def update_connection_button(self):
+        connected = self.info is not None
+        self.refresh_button.configure(text="Refresh" if connected else "Connect")
+        for tip in self.tooltips:
+            if tip.widget is self.refresh_button:
+                tip.text = ("Reload the current clip, layers and colours from TVPaint." if connected else
+                            "Connect to TVPaint and load the current clip, layers and colours.")
 
     def name_edited(self, *_):
         if not self.updating_name:

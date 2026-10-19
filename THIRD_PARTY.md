@@ -5,3 +5,5 @@ The installer obtains Python from [python.org](https://www.python.org/) when nee
 The TVPaint connection component is [BRUNCH Studio's tvpaint-rpc](https://github.com/brunchstudio/tvpaint-rpc), licensed under MIT. Setup downloads the version matched to TVPaint 11.7.3 or 12.1.0 and verifies its SHA-256 checksum before installation. The component is not stored in this repository or inside the release packages. Its [license](https://github.com/brunchstudio/tvpaint-rpc/blob/main/LICENSE.md) applies to that component.
 
 TVPaint is a product of TVPaint Développement. This exporter is an independent tool and is not affiliated with TVPaint Développement or BRUNCH Studio.
+
+Universal colour naming uses the public-domain conversion equations published by Björn Ottosson in [A perceptual color space for image processing](https://bottosson.github.io/posts/oklab/). The exporter compares colours against its own small reference palette; these names are approximations.

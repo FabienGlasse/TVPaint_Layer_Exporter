@@ -28,7 +28,9 @@ Source: "Install.bat"; DestDir: "{app}"; Flags: ignoreversion
 Source: "setup_steps.py"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\exporter\export_layers.py"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\exporter\export_options.py"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\exporter\colour_names.py"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\exporter\exporter_ui.py"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\exporter\ui_help.py"; DestDir: "{app}"; Flags: ignoreversion
 Source: "Uninstall.bat"; DestDir: "{app}"; Flags: ignoreversion
 Source: "uninstall.py"; DestDir: "{app}"; Flags: ignoreversion
 Source: "component_cleanup.py"; DestDir: "{app}"; Flags: ignoreversion

@@ -48,7 +48,7 @@ class GuiTests(unittest.TestCase):
         self.assertEqual(len(ui.checks), 2)
         self.assertIn('Connected', ui.connection.get())
         self.assertEqual(ui.scene.get(), '1 / 2')
-        self.assertEqual(str(ui.mode_button['text']), 'Manual Mode')
+        self.assertEqual(str(ui.mode_buttons['Auto Mode']['style']), 'ActiveMode.TButton')
         ui.parent.set(self.tmp.name)
         ui.prefix.set('SH010')
         ui.first.set('8')
@@ -80,6 +80,159 @@ class GuiTests(unittest.TestCase):
         self.assertFalse(self.ui.validate())
         self.assertIn('whole numbers', self.ui.notice.get())
         self.assertEqual(str(self.ui.start_button['state']), 'disabled')
+
+    def test_reconnect_clears_error_and_formats_tvpaint_name(self):
+        ui = self.ui
+        ui.events.put(('connection_error', 'Could not establish connection with a tvpaint instance before timeout !'))
+        ui.poll()
+        self.assertEqual(ui.status.get(), 'Connection details: Could not establish connection with a TVPaint instance before timeout!')
+        self.assertEqual(str(ui.refresh_button['text']), 'Connect')
+        ui.connect()
+        self.wait_idle()
+        self.assertIn('Connected', ui.connection.get())
+        self.assertEqual(ui.status.get(), '')
+        self.assertEqual(str(ui.refresh_button['text']), 'Refresh')
+        self.assertEqual(str(ui.resume_button['text']), 'Resume interrupted export…')
+        self.assertEqual(str(ui.resume_button['style']), 'Quiet.TButton')
+
+    def test_reconnect_failure_in_layer_colours_recovers(self):
+        from test_colours import ColourScene
+        ui = self.ui
+        ui.populate(ColourScene().inspect())
+        ui.choose_mode('Colour Mode')
+        ui.events.put(('connection_error', 'TVPaint disconnected'))
+        ui.poll()
+        self.assertIsNone(ui.info)
+        self.assertEqual(str(ui.start_button['state']), 'disabled')
+        with patch('exporter_ui.TVPaint', ColourScene):
+            ui.connect()
+            self.wait_idle()
+        self.assertIn('Connected', ui.connection.get())
+        self.assertEqual(len(ui.colour_checks), 3)
+
+    def test_tooltips_and_contextual_tutorial_navigation(self):
+        ui = self.ui
+        tips = {tip.widget: tip for tip in ui.tooltips}
+        self.assertIn('same folder', tips[ui.mode_buttons['Manual Mode']].text)
+        self.assertEqual(tips[ui.mode_buttons['Auto Mode']].text, 'Auto Mode exports checked layers separately.')
+        for widget in (ui.start_button, ui.background_check):
+            self.assertEqual(tips[widget].text, '')
+            tips[widget].show()
+            self.assertIsNone(tips[widget].window)
+        tips[ui.refresh_button].show()
+        self.assertIsNotNone(tips[ui.refresh_button].window)
+        tips[ui.refresh_button].hide()
+        self.assertIsNone(tips[ui.refresh_button].window)
+        ui.start_tutorial()
+        tour = ui.tutorial
+        self.assertEqual(tour.index, 0)
+        self.assertIn('Connect to TVPaint', str(tour.heading['text']))
+        self.assertNotIn('Close', [str(widget['text']) for widget in tour.back.master.winfo_children()])
+        tour.move(1)
+        self.assertIn('LAYER COLORS', str(tour.body['text']))
+        tour.move(-1)
+        self.assertEqual(tour.index, 0)
+        while tour.index < len(tour.steps)-1:
+            tour.move(1)
+        self.assertEqual(str(tour.next['text']), 'Finish')
+        tour.move(1)
+        self.assertFalse(tour.window.winfo_exists())
+        ui.start_tutorial()
+        self.assertTrue(ui.tutorial.window.winfo_exists())
+        ui.tutorial.close()
+
+    def test_colour_buttons_selection_and_group_export(self):
+        from test_colours import ColourScene
+        ui = self.ui
+        ui.populate(ColourScene().inspect())
+        ui.parent.set(self.tmp.name)
+        ui.choose_mode('Colour Mode')
+        self.assertEqual([str(button['text']) for button in ui.mode_buttons.values()],
+                         ['AUTO', 'MANUAL', 'LAYER COLORS'])
+        for mode, button in ui.mode_buttons.items():
+            self.assertEqual(str(button['style']), 'ActiveMode.TButton' if mode == 'Colour Mode' else 'TButton')
+        self.assertEqual(ui.options().layer_ids, [3, 4])
+        self.assertFalse(ui.checks[5].get())
+        self.assertFalse(ui.checks[6].get())
+        self.assertNotIn(10, ui.checks)
+        self.assertTrue(ui.validate())
+        self.assertEqual(str(ui.combine_check['state']), 'disabled')
+        self.assertFalse(ui.combine_check.winfo_manager())
+        self.assertFalse(ui.sections['sequence']['holder'].winfo_manager())
+        self.assertTrue(ui.sections['colour_naming']['holder'].winfo_manager())
+        self.assertEqual(ui.colour_naming.get(), 'top')
+        self.assertEqual([str(widget['text']) for widget in ui.colour_name_radios],
+                         ['Use color group names', 'Use universal color names', 'Use top layer', 'Use bottom layer'])
+        ui.colour_name_radios[0].invoke()
+        ui.validate()
+        self.assertEqual(ui.options().colour_naming, 'colour')
+        ui.colour_name_radios[1].invoke()
+        ui.validate()
+        self.assertEqual(ui.options().colour_naming, 'universal')
+        self.assertIn('Red_001.png', ui.preview.get())
+        ui.colour_name_radios[3].invoke()
+        ui.validate()
+        self.assertEqual(ui.options().colour_naming, 'bottom')
+        ui.colour_name_radios[2].invoke()
+        self.assertEqual(str(ui.sequence_entry['state']), 'disabled')
+        self.assertIn('alternate', ui.colour_checks[1][1].state())
+        ui.colour_checks[1][1].invoke()
+        ui.validate()
+        self.assertTrue(ui.checks[5].get())
+        self.assertEqual(ui.options().layer_ids, [3, 4, 5])
+        ui.select('none')
+        self.assertFalse(ui.validate())
+        ui.colour_checks[1][1].invoke()
+        ui.validate()
+        self.assertEqual(ui.options().layer_ids, [3, 5])
+        with patch('exporter_ui.TVPaint', ColourScene):
+            ui.start()
+            self.wait_idle()
+        self.assertEqual(ui.status.get(), 'Export complete.')
+        self.assertTrue((ui.destination/'Red top/Red top_003.png').exists())
+        self.assertIsNone(ui.session_folder)
+        self.assertFalse(ui.overwrite_button.winfo_manager())
+        ui.choose_mode('Manual Mode')
+        self.assertTrue(ui.combine.get())
+        self.assertFalse(ui.colour_checks)
+        ui.choose_mode('Auto Mode')
+        self.assertFalse(ui.combine.get())
+
+    def test_colour_resume_restores_mode_and_locks_groups(self):
+        from test_colours import ColourScene, ColourTests
+        output = Path(self.tmp.name)/'interrupted'
+        with self.assertRaises(InterruptedError):
+            ColourTests().interrupt(output)
+        self.ui.populate(ColourScene().inspect())
+        with patch('exporter_ui.filedialog.askdirectory', return_value=str(output)):
+            self.ui.load_resume()
+        self.assertEqual(self.ui.mode.get(), 'Colour Mode')
+        self.assertEqual(self.ui.options().layer_ids, [3, 4, 5])
+        self.assertTrue(all('disabled' in widget.state() for _, widget in self.ui.colour_checks.values()))
+        with patch('exporter_ui.TVPaint', ColourScene):
+            self.ui.start()
+            self.wait_idle()
+        self.assertEqual(self.ui.status.get(), 'Export complete.')
+
+    def test_universal_resume_restores_naming_and_locks_choices(self):
+        from test_colours import ColourScene
+        from export_layers import export
+        from export_options import Options
+        import threading
+        output = Path(self.tmp.name)/'universal'
+        stop = threading.Event()
+        with self.assertRaises(InterruptedError):
+            export(ColourScene(cancel=stop), output, stop, options=Options([3, 4, 5], colour_mode=True, colour_naming='universal'))
+        self.ui.populate(ColourScene().inspect())
+        with patch('exporter_ui.filedialog.askdirectory', return_value=str(output)):
+            self.ui.load_resume()
+        self.assertEqual(self.ui.colour_naming.get(), 'universal')
+        self.assertTrue(all('disabled' in widget.state() for widget in self.ui.colour_name_radios))
+        with patch('exporter_ui.TVPaint', ColourScene):
+            self.ui.start()
+            self.wait_idle()
+        self.assertEqual(self.ui.status.get(), 'Export complete.')
+        self.assertTrue((output/'Red/Red_003.png').is_file())
 
     def test_image_format_background_and_flat_preview(self):
         self.ui.parent.set(self.tmp.name)
@@ -121,7 +274,7 @@ class GuiTests(unittest.TestCase):
         ui.mode.set('Manual Mode')
         ui.mode_changed()
         self.assertTrue(ui.combine.get())
-        self.assertEqual(str(ui.mode_button['text']), 'Auto Mode')
+        self.assertEqual(str(ui.mode_buttons['Manual Mode']['style']), 'ActiveMode.TButton')
         self.assertEqual(ui.sequence_name.get(), 'A/B')
         ui.use_bottom_layer()
         self.assertEqual(ui.sequence_name.get(), 'A\\B')
@@ -152,7 +305,7 @@ class GuiTests(unittest.TestCase):
         ui.mode_changed()
         self.assertIsNone(ui.session_folder)
         self.assertFalse(ui.combine.get())
-        self.assertEqual(str(ui.mode_button['text']), 'Manual Mode')
+        self.assertEqual(str(ui.mode_buttons['Auto Mode']['style']), 'ActiveMode.TButton')
         self.assertFalse(ui.overwrite_button.winfo_manager())
         self.assertEqual(str(ui.parent_entry['state']), 'normal')
         self.assertNotIn('mode', ui.preferences())
@@ -195,7 +348,11 @@ class GuiTests(unittest.TestCase):
         self.assertIn('SH010_A_B_001.png', ui.preview.get())
         ui.toggle_mode()
         self.root.update_idletasks()
-        self.assertTrue(all(item['content'].winfo_ismapped() for item in ui.sections.values()))
+        self.assertTrue(all(not item['content'].winfo_manager() for item in ui.sections.values()))
+        for key in ('format', 'frames', 'prefixes', 'sequence'):
+            ui.toggle_section(key)
+        self.root.update_idletasks()
+        self.assertTrue(all(ui.sections[key]['content'].winfo_ismapped() for key in ('format', 'frames', 'prefixes', 'sequence')))
         self.root.geometry('760x710')
         self.root.update()
         for widget in (ui.open_button, ui.report_button, ui.sequence_entry, ui.name_bottom, ui.folder_prefix_entry):

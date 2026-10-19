@@ -303,7 +303,7 @@ def main():
     checked_run([str(python), "-I", "-m", "pip", "check"])
     log("S2 COMPLETE", display="\nRequired components installed.")
     confirm("S3", f"Copy the exporter and its guide to:\n{APP}")
-    for name in ("export_layers.py", "export_options.py", "exporter_ui.py", "User Guide.html", "User Guide.pdf", "TVPaint_Exporter_Logo.png", "TVPaint_Exporter_Logo.ico", "Uninstall.bat", "uninstall.py", "component_cleanup.py", "setup_steps.py"):
+    for name in ("export_layers.py", "export_options.py", "colour_names.py", "exporter_ui.py", "ui_help.py", "User Guide.html", "User Guide.pdf", "TVPaint_Exporter_Logo.png", "TVPaint_Exporter_Logo.ico", "Uninstall.bat", "uninstall.py", "component_cleanup.py", "setup_steps.py"):
         source, target = ROOT / name, APP / name
         if source.resolve() != target.resolve():
             shutil.copy2(source, target)
