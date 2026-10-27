@@ -2,7 +2,8 @@ $ErrorActionPreference = 'Stop'
 $source = $PSScriptRoot
 $workspace = Split-Path -Parent $source
 $guide = Join-Path $workspace 'docs\assets'
-$version = '1.0.0'
+$version = [regex]::Match((Get-Content -LiteralPath (Join-Path $workspace 'exporter\version.ini') -Raw), '(?m)^version=(\d+\.\d+\.\d+)\r?$').Groups[1].Value
+if (-not $version) { throw 'Set a valid version in exporter/version.ini before building.' }
 $batFolder = Join-Path $workspace 'dist\TVPaint_CMD_Installer'
 New-Item -ItemType Directory -Path $batFolder -Force | Out-Null
 $packageFiles = @()
@@ -14,7 +15,7 @@ foreach ($name in @('User Guide.html','User Guide.pdf')) {
     Copy-Item -LiteralPath (Join-Path $guide $name) -Destination (Join-Path $batFolder $name) -Force
     $packageFiles += Join-Path $batFolder $name
 }
-foreach ($name in @('export_layers.py','export_options.py','colour_names.py','exporter_ui.py','ui_help.py','requirements.txt','TVPaint_Exporter_Logo.png','TVPaint_Exporter_Logo.ico')) {
+foreach ($name in @('export_layers.py','export_options.py','colour_names.py','exporter_ui.py','ui_help.py','updater.py','version.ini','requirements.txt','TVPaint_Exporter_Logo.png','TVPaint_Exporter_Logo.ico')) {
     Copy-Item -LiteralPath (Join-Path $workspace "exporter\$name") -Destination (Join-Path $batFolder $name) -Force
     $packageFiles += Join-Path $batFolder $name
 }

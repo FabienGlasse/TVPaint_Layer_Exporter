@@ -12,6 +12,7 @@ from datetime import datetime
 from export_options import Options, IMAGE_FORMATS, plan, frame_path, check_writable, read_settings, write_settings, new_output_folder, check_sequence_conflicts, sequence_conflicts
 from export_layers import TVPaint, export
 from ui_help import Tooltip, Tutorial
+from updater import UpdateWindow
 
 
 class ExporterWindow:
@@ -46,6 +47,7 @@ class ExporterWindow:
         self.colour_naming = tk.StringVar(value="top")
         self.tooltips = []
         self.tutorial = None
+        self.update_window = None
         self.sequence_name = tk.StringVar()
         self.session_status = tk.StringVar(value="Auto Mode creates a new folder for each export.")
         self.format_note = tk.StringVar()
@@ -288,6 +290,9 @@ class ExporterWindow:
         self.open_button.pack(side="left")
         self.report_button = ttk.Button(bottom, text="Open delivery report", command=self.open_report, state="disabled")
         self.report_button.pack(side="left", padx=8)
+        self.update_button = self.button(bottom, "Check for updates", self.check_updates)
+        self.update_button.configure(style="Quiet.TButton")
+        self.update_button.pack(side="left", padx=(8, 0))
         ttk.Label(bottom, text="by Fabien Glasse", foreground="#565656", font=("Segoe UI", 10, "italic")).pack(side="right")
         for value in (self.parent, self.prefix, self.folder_prefix, self.numbering, self.padding, self.first, self.last, self.image_format, self.background, self.flat_output, self.combine, self.colour_naming):
             value.trace_add("write", self.schedule_check)
@@ -318,6 +323,7 @@ class ExporterWindow:
             "Overwrite layers": "Replace the matching sequence images in this Manual session.",
             "Export layers": '',
             "Resume interrupted export…": "Choose an interrupted export folder to verify existing frames and continue.",
+            "Check for updates": "Check published GitHub releases and review an update before installing it.",
         }
         self.tooltips.append(Tooltip(widget, explanations.get(text, text)))
         return widget
@@ -749,6 +755,21 @@ class ExporterWindow:
             os.startfile(str(self.destination))
         except OSError as exc:
             self.status.set(f"Could not open folder: {exc}")
+
+    def check_updates(self):
+        if self.busy:
+            return
+        if self.update_window and self.update_window.window.winfo_exists():
+            self.update_window.window.lift()
+            return
+        self.update_window = UpdateWindow(self.root, lambda: not self.busy, self.finish_for_update)
+
+    def finish_for_update(self, launch):
+        if self.busy:
+            raise RuntimeError("Finish or cancel the current export before updating.")
+        write_settings(self.preferences())
+        launch()
+        self.root.destroy()
 
     def open_report(self):
         try:

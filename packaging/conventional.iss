@@ -1,9 +1,10 @@
 ; Conventional installer; shares the guided configuration with the BAT edition.
 #define AppName "TVPaint Layer Exporter"
+#define ExporterVersion ReadIni(SourcePath + "..\exporter\version.ini", "app", "version")
 [Setup]
 AppId={{AABEE845-6716-45CF-A26A-9222A2F3808A}
 AppName={#AppName}
-AppVersion=1.0.0
+AppVersion={#ExporterVersion}
 AppPublisher=Fabien Glasse
 SetupIconFile=..\exporter\TVPaint_Exporter_Logo.ico
 UninstallDisplayIcon={app}\TVPaint_Exporter_Logo.ico
@@ -31,6 +32,8 @@ Source: "..\exporter\export_options.py"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\exporter\colour_names.py"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\exporter\exporter_ui.py"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\exporter\ui_help.py"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\exporter\updater.py"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\exporter\version.ini"; DestDir: "{app}"; Flags: ignoreversion
 Source: "Uninstall.bat"; DestDir: "{app}"; Flags: ignoreversion
 Source: "uninstall.py"; DestDir: "{app}"; Flags: ignoreversion
 Source: "component_cleanup.py"; DestDir: "{app}"; Flags: ignoreversion

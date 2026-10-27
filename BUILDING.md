@@ -26,3 +26,11 @@ powershell -ExecutionPolicy Bypass -File packaging/build_installers.ps1
 ```
 
 Review the resulting files and their SHA-256 checksums before uploading them to a release. Installing either package may download Python, PyPI dependencies and the matching BRUNCH Studio connection component. TVPaint itself is not included.
+
+## Publishing updates
+
+Set the next version in `exporter/version.ini` before building, for example `1.0.1`. Package names and the conventional installer's version use this file. Publish a stable GitHub release tagged `v1.0.1` and upload `TVPaint_Layer_Exporter_1.0.1_CMD.zip` and the Setup ZIP. Pushing source to main does not publish an update.
+
+The updater downloads the CMD ZIP for both installation methods. It uses the GitHub release asset's SHA-256 digest, checks its flat payload and embedded version, and waits for the exporter to exit before replacing application files. Keep the update payload names in `exporter/updater.py` and the build recipes in sync. A release with changed requirements, changed TVPaint bridge configuration or a different payload layout requires the full installer.
+
+Updater logs and the previous application files are kept in a session folder under `%LOCALAPPDATA%\TVPaintLayerExporterUpdates`. Settings, the installation record, uninstall registration, Python, the bridge and exports are not part of the update payload. The updater does not change files in a source checkout or install anything during a version check.

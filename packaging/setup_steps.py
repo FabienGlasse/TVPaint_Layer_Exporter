@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import atexit
 import csv
+import configparser
 import ctypes
 import hashlib
 import io
@@ -303,7 +304,7 @@ def main():
     checked_run([str(python), "-I", "-m", "pip", "check"])
     log("S2 COMPLETE", display="\nRequired components installed.")
     confirm("S3", f"Copy the exporter and its guide to:\n{APP}")
-    for name in ("export_layers.py", "export_options.py", "colour_names.py", "exporter_ui.py", "ui_help.py", "User Guide.html", "User Guide.pdf", "TVPaint_Exporter_Logo.png", "TVPaint_Exporter_Logo.ico", "Uninstall.bat", "uninstall.py", "component_cleanup.py", "setup_steps.py"):
+    for name in ("export_layers.py", "export_options.py", "colour_names.py", "exporter_ui.py", "ui_help.py", "updater.py", "version.ini", "requirements.txt", "User Guide.html", "User Guide.pdf", "TVPaint_Exporter_Logo.png", "TVPaint_Exporter_Logo.ico", "Uninstall.bat", "uninstall.py", "component_cleanup.py", "setup_steps.py"):
         source, target = ROOT / name, APP / name
         if source.resolve() != target.resolve():
             shutil.copy2(source, target)
@@ -316,8 +317,10 @@ def main():
     (APP / "python_path.txt").write_text(runtime["executable"], encoding="utf-8")
     if not (APP / "unins000.exe").exists():
         import winreg
+        app_version_config = configparser.ConfigParser()
+        app_version_config.read(APP / "version.ini", encoding="utf-8")
         with winreg.CreateKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Uninstall\TVPaintLayerExporter") as key:
-            for name, value in {"DisplayName": "TVPaint Layer Exporter", "DisplayVersion": "1.0.0",
+            for name, value in {"DisplayName": "TVPaint Layer Exporter", "DisplayVersion": app_version_config.get("app", "version"),
                                 "Publisher": "Fabien Glasse", "InstallLocation": str(APP),
                                 "DisplayIcon": str(APP / "TVPaint_Exporter_Logo.ico"),
                                 "UninstallString": subprocess.list2cmdline([os.environ.get("COMSPEC", "cmd.exe"), "/d", "/c", str(APP / "Uninstall.bat")])}.items():

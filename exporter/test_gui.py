@@ -81,6 +81,51 @@ class GuiTests(unittest.TestCase):
         self.assertIn('whole numbers', self.ui.notice.get())
         self.assertEqual(str(self.ui.start_button['state']), 'disabled')
 
+    def test_updater_is_manual_and_unavailable_while_busy(self):
+        from types import SimpleNamespace
+        window = SimpleNamespace(window=SimpleNamespace(winfo_exists=lambda: True, lift=lambda: None))
+        with patch('exporter_ui.UpdateWindow', return_value=window) as create:
+            self.ui.busy = True
+            self.ui.check_updates()
+            create.assert_not_called()
+            self.ui.busy = False
+            self.ui.check_updates()
+            create.assert_called_once()
+            self.ui.check_updates()
+            create.assert_called_once()
+
+    def test_update_window_current_version_and_network_failure(self):
+        for result, error, expected in ((None, None, "You're up to date."),
+                                         (None, OSError('offline'), 'Could not check for updates: offline')):
+            self.ui.update_window = None
+            with patch('updater.check_release', return_value=result, side_effect=error):
+                self.ui.check_updates()
+                dialog = self.ui.update_window
+                deadline = time.monotonic()+3
+                while dialog.status.get() == 'Checking for updates…' and time.monotonic() < deadline:
+                    self.root.update()
+                    time.sleep(.01)
+                self.assertEqual(dialog.status.get(), expected)
+                self.assertEqual(str(dialog.install['state']), 'disabled')
+                dialog.close()
+
+    def test_update_dialog_source_checkout_and_export_guard(self):
+        release = {'version': '1.0.1', 'notes': 'Release notes here'}
+        with patch('updater.check_release', return_value=release):
+            self.ui.check_updates()
+            dialog = self.ui.update_window
+            deadline = time.monotonic()+3
+            while dialog.release is None and time.monotonic() < deadline:
+                self.root.update()
+                time.sleep(.01)
+            self.assertIn('source checkout', dialog.status.get())
+            self.assertIn('Release notes here', dialog.notes.get('1.0', 'end'))
+            self.ui.busy = True
+            dialog.download()
+            self.assertIn('Finish or cancel', dialog.status.get())
+            self.ui.busy = False
+            dialog.close()
+
     def test_reconnect_clears_error_and_formats_tvpaint_name(self):
         ui = self.ui
         ui.events.put(('connection_error', 'Could not establish connection with a tvpaint instance before timeout !'))

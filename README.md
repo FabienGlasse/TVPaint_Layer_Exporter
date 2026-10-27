@@ -23,6 +23,12 @@ Close TVPaint before installation. Setup needs an internet connection and Window
 
 The installer was trialled on Windows 11 with TVPaint 11.7.3 and 12.1.0.
 
+## Updates
+
+Click **Check for updates** at the bottom of the exporter to check published GitHub releases. Read the release notes, then choose **Download and update**. The exporter verifies the download, closes, updates its application files and opens again. Settings, exported images, Python and the TVPaint connection component are kept. Failed file replacements restore the previous application files from a backup. Releases that need different Python or TVPaint components use the full installer instead.
+
+Install a package containing the updater once to add this button to an older installation. Source checkouts update through Git. Update checks happen only when requested.
+
 ## In the export folder
 
 Each selected layer normally gets its own sequence folder. You can also combine checked layers, put all images at the export folder root, add separate folder and filename prefixes, or include the TVPaint background. `Delivery Report.txt` records the full source layer for compositing use and adds the details of each export. A hidden `export_manifest.json` keeps the latest export's resume information.
