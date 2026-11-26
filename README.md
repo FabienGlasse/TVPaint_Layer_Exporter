@@ -10,6 +10,12 @@ The TVPaint connection uses [BRUNCH Studio's tvpaint-rpc](https://github.com/bru
 
 The layer list shows TVPaint's colour labels. Choose **AUTO** for individual layer exports, **MANUAL** to build a delivery over several exports, or **LAYER COLORS** for one combined sequence per colour group. The active mode is orange. Layer Colors starts with visible coloured layers selected; use the group checkboxes or individual layers to adjust the selection. Each export creates a new folder. Sequences use the top checked layer's name by default; naming settings also offer the bottom layer, TVPaint's color group names, or approximate universal color names such as Red, Green and Blue. Groups stay separate even when their approximate names match. Hover over buttons for help, or click **?** beside **Connect / Refresh** for the guided tutorial.
 
+![Layer Colors with separate colour group and layer stack panes and sequence-name previews](docs/assets/screenshots/layer-colors.png)
+
+Check **Use custom names** under **Edit sequence naming** to review and rename each output sequence before exporting. The window shows its colour group, source name and filename preview.
+
+![Use custom names with editable sequence names, colour swatches and grey filename previews](docs/assets/screenshots/custom-names.png)
+
 ## Get started
 
 Download one of the two packages from [Releases](https://github.com/FabienGlasse/TVPaint_Layer_Exporter/releases):
