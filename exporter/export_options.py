@@ -36,6 +36,7 @@ class Options:
     folder_prefix: str = ""
     colour_mode: bool = False
     colour_naming: str = "top"
+    custom_names: list[str] | None = None
 
     def __post_init__(self):
         if self.layer_ids is not None and (not isinstance(self.layer_ids, list) or
@@ -53,6 +54,9 @@ class Options:
             raise ValueError("The colour mode setting is invalid.")
         if self.colour_naming not in ("colour", "universal", "top", "bottom"):
             raise ValueError("Choose color group names, universal color names, the top layer or the bottom layer for sequence names.")
+        if self.custom_names is not None and (not isinstance(self.custom_names, list) or
+                                              any(not isinstance(name, str) for name in self.custom_names)):
+            raise ValueError("The custom sequence names are invalid.")
 
     @classmethod
     def from_manifest(cls, values):
@@ -70,7 +74,34 @@ def identity(info):
             "layers": [{k: layer[k] for k in ("id", "name")} for layer in info["layers"]]}
 
 
-def plan(info, output, options=None):
+def custom_name_errors(names):
+    from export_layers import folder_names
+    counts = {}
+    for name in names:
+        key = name.casefold()
+        counts[key] = counts.get(key, 0) + 1
+    errors = []
+    for name in names:
+        if not name.strip():
+            errors.append("Enter a sequence name.")
+        elif len(name) > 120 or name != name.strip() or folder_names([name], max_length=120)[0] != name:
+            errors.append("Use up to 120 characters and a valid Windows name without surrounding spaces or a final dot.")
+        elif counts[name.casefold()] > 1:
+            errors.append("Each sequence needs a different name.")
+        else:
+            errors.append("")
+    return errors
+
+
+def colour_sequence_name(index, members, naming):
+    if naming == "universal":
+        return universal_colour_name(members[0].get("colour_rgb"))
+    if naming == "colour":
+        return members[0].get("colour_name") or f"Colour {index}"
+    return members[-1 if naming == "bottom" else 0]["name"]
+
+
+def plan(info, output, options=None, *, check_paths=True):
     from export_layers import folder_names
     options = options or Options()
     first = info["start"] if options.first is None else options.first
@@ -98,13 +129,7 @@ def plan(info, output, options=None):
             if index is None:
                 raise ValueError("Colour information is unavailable for a selected layer. Refresh the connection or use Auto Mode.")
             groups.setdefault(index, []).append(layer)
-        def group_name(index, members):
-            if options.colour_naming == "universal":
-                return universal_colour_name(members[0].get("colour_rgb"))
-            if options.colour_naming == "colour":
-                return members[0].get("colour_name") or f"Colour {index}"
-            return members[-1 if options.colour_naming == "bottom" else 0]["name"]
-        layers = [dict(id=members[0]["id"], name=group_name(index, members),
+        layers = [dict(id=members[0]["id"], name=colour_sequence_name(index, members, options.colour_naming),
                        visible=True, colour_index=index, colour_rgb=members[0].get("colour_rgb"),
                        source_ids=[x["id"] for x in members], source_names=[x["name"] for x in members])
                   for index, members in groups.items()]
@@ -112,11 +137,22 @@ def plan(info, output, options=None):
         name = options.sequence_name.strip() or layers[0]["name"]
         layers = [dict(id=layers[0]["id"], name=name, visible=True,
                        source_ids=selected_ids, source_names=[x["name"] for x in layers])]
-    names = folder_names([x["name"] for x in layers])
+    names = options.custom_names
+    if names is None:
+        names = folder_names([x["name"] for x in layers])
+    else:
+        if len(names) != len(layers):
+            raise ValueError("Enter one custom name per sequence.")
+        if error := next((error for error in custom_name_errors(names) if error), ""):
+            raise ValueError(error)
     for layer, name in zip(layers, names):
         layer.update(folder=(folder_prefix + "_" if folder_prefix else "") + name,
                      filename=name, frames_written=0)
-        if name != layer["name"]:
+        if options.custom_names is not None:
+            if not layer.get("source_names"):
+                layer["source_names"] = [layer["name"]]
+            layer["name"] = name
+        elif name != layer["name"]:
             notices.append(f"Folder: {layer['name']} → {name} (duplicate or unsupported name).")
     background = options.background or not IMAGE_FORMATS[options.image_format][2]
     if background and not options.background:
@@ -125,9 +161,9 @@ def plan(info, output, options=None):
                    options.image_format, background, options.layer_folders,
                    options.combine and not options.colour_mode,
                    layers[0]["name"] if options.combine and not options.colour_mode else "", folder_prefix,
-                   options.colour_mode, options.colour_naming)
+                   options.colour_mode, options.colour_naming, options.custom_names)
     result = dict(options=asdict(opts), layers=layers, total=len(layers) * (last-first+1), notices=notices)
-    for layer in layers:
+    for layer in (layers if check_paths else ()):
         path = frame_path(output, layer, last, result["options"])
         if len(str(path.resolve())) >= 250:
             raise ValueError("The output path is too long. Choose a shorter folder or shot name.")
@@ -291,7 +327,8 @@ def report(manifest):
             destination = './' + prefix + layer.get('filename', layer['folder']) + '_…'
         lines.append(f"  {layer['name']} → {destination} ({layer['frames_written']} {image_format} files)")
         if layer.get("source_names"):
-            lines.append("  Combined layers: " + ", ".join(layer["source_names"]))
+            source_label = "Combined layers" if layer.get("source_ids") else "Source layer"
+            lines.append(f"  {source_label}: " + ", ".join(layer["source_names"]))
     lines += ["", *manifest.get("notices", [])]
     if manifest.get("error"):
         lines += ["", "Stopped: " + manifest["error"]]

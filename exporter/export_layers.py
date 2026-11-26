@@ -41,14 +41,14 @@ def transport_path(path):
     return value
 
 
-def folder_names(names):
+def folder_names(names, *, max_length=80):
     """Preserve valid names; resolve Windows-invalid names and case collisions."""
     used = set()
     result = []
     for name in names:
         base = unicodedata.normalize("NFC", name)
         base = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", base).rstrip(" .")
-        base = base[:80].rstrip(" .") or "Layer"
+        base = base[:max_length].rstrip(" .") or "Layer"
         if re.fullmatch(r"(?i)(CON|PRN|AUX|NUL|COM[1-9¹²³]|LPT[1-9¹²³])(?:\..*)?", base):
             base = "_" + base
         candidate, suffix = base, 2

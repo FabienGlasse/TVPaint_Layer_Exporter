@@ -11,6 +11,22 @@ from test_export_layers import FakeTVPaint
 
 
 class ExportOptionsTests(unittest.TestCase):
+    def test_custom_colour_sequence_names_survive_resume(self):
+        from test_colours import ColourScene
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp)/'out'
+            stop = threading.Event()
+            options = Options(layer_ids=[3, 4, 5], colour_mode=True, layer_folders=False,
+                              custom_names=['Character', 'Props'])
+            with self.assertRaises(InterruptedError):
+                export(ColourScene(cancel=stop), output, stop, options=options)
+            export(ColourScene(), output, resume=True)
+            self.assertTrue((output/'Character_003.png').is_file())
+            self.assertTrue((output/'Props_003.png').is_file())
+            manifest = json.loads((output/'export_manifest.json').read_text())
+            self.assertEqual(manifest['options']['custom_names'], ['Character', 'Props'])
+            self.assertEqual(manifest['layers'][0]['source_ids'], [3, 5])
+
     def test_flat_output_collision_names_and_resume(self):
         with tempfile.TemporaryDirectory() as tmp:
             output = Path(tmp)/'out'

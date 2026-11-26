@@ -4,6 +4,7 @@ from pathlib import Path
 import tempfile
 import time
 import tkinter as tk
+from tkinter import ttk
 import unittest
 from unittest.mock import patch
 
@@ -197,6 +198,12 @@ class GuiTests(unittest.TestCase):
         for mode, button in ui.mode_buttons.items():
             self.assertEqual(str(button['style']), 'ActiveMode.TButton' if mode == 'Colour Mode' else 'TButton')
         self.assertEqual(ui.options().layer_ids, [3, 4])
+        self.assertEqual(ui.colour_panel.winfo_manager(), 'grid')
+        self.assertEqual(ui.layer_panel['text'], 'Layer stack')
+        self.root.update_idletasks()
+        self.assertAlmostEqual(ui.colour_panel.winfo_height(), ui.layer_panel.winfo_height(), delta=1)
+        self.assertIn(ui.colour_checks[1][1].master, ui.colour_box.winfo_children())
+        self.assertEqual(ui.colour_previews[1]['text'], '· Red top')
         self.assertFalse(ui.checks[5].get())
         self.assertFalse(ui.checks[6].get())
         self.assertNotIn(10, ui.checks)
@@ -211,13 +218,21 @@ class GuiTests(unittest.TestCase):
         ui.colour_name_radios[0].invoke()
         ui.validate()
         self.assertEqual(ui.options().colour_naming, 'colour')
+        self.assertEqual(ui.colour_previews[1]['text'], '· Character')
         ui.colour_name_radios[1].invoke()
         ui.validate()
         self.assertEqual(ui.options().colour_naming, 'universal')
+        self.assertEqual(ui.colour_previews[1]['text'], '· Red')
         self.assertIn('Red_001.png', ui.preview.get())
         ui.colour_name_radios[3].invoke()
         ui.validate()
         self.assertEqual(ui.options().colour_naming, 'bottom')
+        self.assertEqual(ui.colour_previews[1]['text'], '· Red top')
+        ui.checks[5].set(True)
+        ui.validate()
+        self.assertEqual(ui.colour_previews[1]['text'], '· Red bottom')
+        ui.checks[5].set(False)
+        ui.validate()
         ui.colour_name_radios[2].invoke()
         self.assertEqual(str(ui.sequence_entry['state']), 'disabled')
         self.assertIn('alternate', ui.colour_checks[1][1].state())
@@ -240,6 +255,7 @@ class GuiTests(unittest.TestCase):
         ui.choose_mode('Manual Mode')
         self.assertTrue(ui.combine.get())
         self.assertFalse(ui.colour_checks)
+        self.assertFalse(ui.colour_panel.winfo_manager())
         ui.choose_mode('Auto Mode')
         self.assertFalse(ui.combine.get())
 
@@ -354,6 +370,96 @@ class GuiTests(unittest.TestCase):
         self.assertFalse(ui.overwrite_button.winfo_manager())
         self.assertEqual(str(ui.parent_entry['state']), 'normal')
         self.assertNotIn('mode', ui.preferences())
+
+    def naming_controls(self):
+        def children(widget):
+            for child in widget.winfo_children():
+                yield child
+                yield from children(child)
+        widgets = list(children(self.ui.naming_window))
+        return ([widget for widget in widgets if isinstance(widget, ttk.Entry)],
+                {str(widget['text']): widget for widget in widgets if isinstance(widget, ttk.Button)})
+
+    def test_custom_colour_caption_and_scrollbar(self):
+        from test_colours import ColourScene
+        ui = self.ui
+        info = ColourScene().inspect()
+        for number in range(11, 19):
+            info['layers'].append(dict(id=number, name=f'Ink {number}', visible=True,
+                                       colour_index=number, colour_name=f'Group {number}', colour_rgb=[0, 255, 0]))
+        ui.populate(info)
+        ui.parent.set(self.tmp.name)
+        ui.choose_mode('Colour Mode')
+        ui.use_custom_names.set(True)
+        ui.start()
+        window = ui.naming_window
+        self.assertEqual(window.title(), 'Use custom names')
+        fields, buttons = self.naming_controls()
+        heading = fields[0].master.winfo_children()[0]
+        caption, preview = heading.winfo_children()
+        self.assertEqual(caption['text'], 'Character · Red top')
+        self.assertEqual(preview['style'], 'Muted.TLabel')
+        self.assertEqual(window.getvar(preview['textvariable']), f" · {Path('Red top', 'Red top_001.png')}")
+        self.assertEqual(caption.image.get(0, 0), (255, 0, 0))
+        canvas = fields[0].master.master.master
+        bar = next(widget for widget in canvas.master.winfo_children() if isinstance(widget, ttk.Scrollbar))
+        window.geometry('680x290')
+        self.root.update()
+        self.assertEqual(bar.winfo_manager(), 'pack')
+        window.geometry('680x900')
+        self.root.update()
+        self.assertFalse(bar.winfo_manager())
+        buttons['Back'].invoke()
+
+    def test_custom_names_keep_drafts_and_export_distinct_files(self):
+        ui = self.ui
+        ui.parent.set(self.tmp.name)
+        ui.folder_prefix.set('SQ12')
+        ui.prefix.set('SH03')
+        ui.use_custom_names.set(True)
+        ui.start()
+        fields, buttons = self.naming_controls()
+        self.assertEqual([field.get() for field in fields], ['A_B', 'A_B__2'])
+        fields[0].delete(0, 'end')
+        fields[0].insert(0, 'Ink')
+        fields[1].delete(0, 'end')
+        fields[1].insert(0, 'ink')
+        self.assertTrue(buttons['Export'].instate(['disabled']))
+        self.assertIsNone(ui.destination)
+        buttons['Back'].invoke()
+        ui.checks[4].set(False)
+        ui.start()
+        fields, buttons = self.naming_controls()
+        self.assertEqual([field.get() for field in fields], ['Ink'])
+        buttons['Export'].invoke()
+        self.wait_idle()
+        self.assertTrue((ui.destination/'SQ12_Ink'/'SH03_Ink_003.png').is_file())
+        self.assertIn('Source layer: A/B', (ui.destination/'Delivery Report.txt').read_text(encoding='utf-8'))
+
+    def test_custom_manual_collision_requires_overwrite_from_prompt(self):
+        ui = self.ui
+        ui.parent.set(self.tmp.name)
+        ui.toggle_mode()
+        ui.use_custom_names.set(True)
+        ui.start()
+        fields, buttons = self.naming_controls()
+        self.assertEqual(len(fields), 1)
+        fields[0].delete(0, 'end')
+        fields[0].insert(0, 'Combined')
+        buttons['Export'].invoke()
+        self.wait_idle()
+        image = ui.destination/'Combined'/'Combined_001.png'
+        image.write_bytes(b'marked')
+        ui.start()
+        fields, buttons = self.naming_controls()
+        self.assertEqual(fields[0].get(), 'Combined')
+        buttons['Export'].invoke()
+        self.assertFalse(ui.busy)
+        self.assertEqual(image.read_bytes(), b'marked')
+        self.assertEqual(buttons['Overwrite layers'].winfo_manager(), 'pack')
+        buttons['Overwrite layers'].invoke()
+        self.wait_idle()
+        self.assertTrue(image.read_bytes().startswith(b'\x89PNG'))
 
     def test_manual_overwrite_replaces_only_matching_sequence(self):
         ui = self.ui

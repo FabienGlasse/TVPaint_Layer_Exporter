@@ -1,5 +1,7 @@
 """TVPaint exporter interface. All TVPaint work runs off the UI thread."""
+from dataclasses import replace
 from pathlib import Path
+import ctypes
 import json
 import os
 import queue
@@ -9,8 +11,10 @@ import tkinter as tk
 from tkinter import ttk, filedialog
 from datetime import datetime
 
-from export_options import Options, IMAGE_FORMATS, plan, frame_path, check_writable, read_settings, write_settings, new_output_folder, check_sequence_conflicts, sequence_conflicts
-from export_layers import TVPaint, export
+from export_options import (Options, IMAGE_FORMATS, plan, frame_path, check_writable, read_settings, write_settings,
+                            new_output_folder, check_sequence_conflicts, sequence_conflicts, custom_name_errors,
+                            identity, colour_sequence_name)
+from export_layers import TVPaint, export, folder_names
 from ui_help import Tooltip, Tutorial
 from updater import UpdateWindow
 
@@ -45,6 +49,9 @@ class ExporterWindow:
         self.active_mode = "Auto Mode"
         self.combine = tk.BooleanVar(value=False)
         self.colour_naming = tk.StringVar(value="top")
+        self.use_custom_names = tk.BooleanVar(value=False)
+        self.custom_drafts = {}
+        self.naming_window = None
         self.tooltips = []
         self.tutorial = None
         self.update_window = None
@@ -62,7 +69,8 @@ class ExporterWindow:
         self.timing = tk.StringVar(value="Elapsed 0:00  ·  Remaining —")
         self.checks = {}
         self.colour_checks = {}
-        self.swatches = []
+        self.colour_members = {}
+        self.colour_previews = {}
         self.controls = []
         root.title("TVPaint Layer Exporter")
         root.geometry("940x840")
@@ -72,6 +80,7 @@ class ExporterWindow:
         root.iconphoto(True, self.logo)
         if os.name == "nt":
             root.iconbitmap(str(assets / "TVPaint_Exporter_Logo.ico"))
+            root.bind("<Map>", self.set_dark_title_bar, add="+")
         style = ttk.Style(root)
         # Native Windows themes ignore custom progress colours; clam honours them.
         style.theme_use("clam")
@@ -99,7 +108,6 @@ class ExporterWindow:
         root.option_add("*TCombobox*Listbox.foreground", white)
         root.option_add("*TCombobox*Listbox.selectBackground", "#666666")
         root.option_add("*TCombobox*Listbox.selectForeground", white)
-        style.configure("Title.TLabel", font=("Segoe UI", 18, "bold"))
         style.configure("Muted.TLabel", foreground=muted)
         style.configure("Disabled.TLabel", foreground=disabled)
         style.configure("Scene.TLabel", foreground=orange)
@@ -121,13 +129,10 @@ class ExporterWindow:
         style.map("Layers.Vertical.TScrollbar", background=[("active", orange), ("pressed", orange)])
         box = ttk.Frame(root, padding=20)
         box.pack(fill="both", expand=True)
-        header = ttk.Frame(box)
-        header.pack(fill="x")
-        ttk.Label(header, text="TVPaint Layer Exporter", style="Title.TLabel").pack(side="left")
         row = ttk.Frame(box)
-        row.pack(fill="x", pady=(8, 12))
+        row.pack(fill="x", pady=(0, 12))
         connection_box = ttk.Frame(row)
-        connection_box.pack(side="left", fill="x", expand=True)
+        connection_box.pack(side="left", fill="x", expand=True, anchor="n")
         ttk.Label(connection_box, textvariable=self.connection, wraplength=450).pack(anchor="w")
         ttk.Label(connection_box, textvariable=self.scene, style="Scene.TLabel", wraplength=450).pack(anchor="w")
         connection_tools = ttk.Frame(row)
@@ -153,28 +158,21 @@ class ExporterWindow:
         body.columnconfigure(0, weight=1)
         body.columnconfigure(1, weight=2)
         body.rowconfigure(0, weight=1)
-        left = ttk.LabelFrame(body, text="Layers", padding=10)
+        left = ttk.Frame(body)
         left.grid(row=0, column=0, sticky="nsew", padx=(0, 12))
+        left.columnconfigure(0, weight=1)
+        left.rowconfigure(2, weight=1, uniform="layer_panes")
         tools = ttk.Frame(left)
-        tools.pack(fill="x", pady=(0, 8))
+        tools.grid(row=0, column=0, sticky="ew", pady=(0, 5))
         for label, mode in (("All", "all"), ("Visible", "visible"), ("None", "none")):
             self.button(tools, label, lambda m=mode: self.select(m)).pack(side="left", padx=(0, 4))
-        self.canvas = tk.Canvas(left, highlightthickness=0, width=220, height=150, background=grey)
-        scrollbar = ttk.Scrollbar(left, orient="vertical", command=self.canvas.yview, style="Layers.Vertical.TScrollbar")
-        scrollbar.pack(side="right", fill="y")
-        self.canvas.pack(side="left", fill="both", expand=True)
-        def scroll_position(first, last):
-            scrollbar.set(first, last)
-            if float(first) <= 0 and float(last) >= 1:
-                scrollbar.pack_forget()
-            elif not scrollbar.winfo_manager():
-                scrollbar.pack(side="right", fill="y", before=self.canvas)
-        self.canvas.configure(yscrollcommand=scroll_position)
-        self.canvas.bind("<MouseWheel>", self.scroll_layers)
-        self.layer_box = ttk.Frame(self.canvas)
-        self.layer_window = self.canvas.create_window((0, 0), window=self.layer_box, anchor="nw")
-        self.layer_box.bind("<Configure>", lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
-        self.canvas.bind("<Configure>", lambda e: self.canvas.itemconfigure(self.layer_window, width=e.width))
+        self.colour_panel = ttk.LabelFrame(left, text="Colour groups", padding=10)
+        self.colour_panel.grid(row=1, column=0, sticky="nsew", pady=(0, 4))
+        self.colour_panel.grid_remove()
+        self.colour_canvas, self.colour_box = self.scrolling_rows(self.colour_panel, width=220, height=80)
+        self.layer_panel = ttk.LabelFrame(left, text="Layers", padding=10)
+        self.layer_panel.grid(row=2, column=0, sticky="nsew")
+        self.canvas, self.layer_box = self.scrolling_rows(self.layer_panel, width=220, height=150)
         right = ttk.Frame(body)
         right.grid(row=0, column=1, sticky="nsew")
         ttk.Label(right, text="Export settings").pack(anchor="w", pady=(0, 4))
@@ -184,7 +182,7 @@ class ExporterWindow:
         formats = self.settings_section(right, "format", "Edit image format")
         frames = self.settings_section(right, "frames", "Edit frame range")
         prefixes = self.settings_section(right, "prefixes", "Edit folder / filename prefixes")
-        sequence = self.settings_section(right, "sequence", "Edit sequence name")
+        sequence = self.settings_section(right, "sequence", "Edit sequence naming")
         row = ttk.Frame(formats)
         row.pack(fill="x", pady=(0, 4))
         ttk.Label(row, text="Image format ").pack(side="left")
@@ -232,6 +230,7 @@ class ExporterWindow:
         self.name_reset.pack(side="left", padx=(6, 0))
         self.name_bottom = self.button(row, "Use bottom layer", self.use_bottom_layer)
         self.name_bottom.pack(side="left", padx=(6, 0))
+        self.custom_names_check(sequence)
         colour_naming = self.settings_section(right, "colour_naming", "Edit sequence naming")
         self.colour_name_radios = []
         for text, value in (("Use color group names", "colour"), ("Use universal color names", "universal"),
@@ -240,6 +239,7 @@ class ExporterWindow:
             radio.pack(anchor="w", pady=2)
             self.controls.append(radio)
             self.colour_name_radios.append(radio)
+        self.custom_names_check(colour_naming)
         preview_box = self.preview_box = ttk.Frame(right, padding=12, relief="solid", borderwidth=1)
         preview_box.pack(side="bottom", fill="x")
         ttk.Label(preview_box, text="Filename preview", style="Muted.TLabel").pack(anchor="w", pady=(0, 4))
@@ -294,7 +294,7 @@ class ExporterWindow:
         self.update_button.configure(style="Quiet.TButton")
         self.update_button.pack(side="left", padx=(8, 0))
         ttk.Label(bottom, text="by Fabien Glasse", foreground="#565656", font=("Segoe UI", 10, "italic")).pack(side="right")
-        for value in (self.parent, self.prefix, self.folder_prefix, self.numbering, self.padding, self.first, self.last, self.image_format, self.background, self.flat_output, self.combine, self.colour_naming):
+        for value in (self.parent, self.prefix, self.folder_prefix, self.numbering, self.padding, self.first, self.last, self.image_format, self.background, self.flat_output, self.combine, self.colour_naming, self.use_custom_names):
             value.trace_add("write", self.schedule_check)
         self.add_tooltips()
         self.sequence_name.trace_add("write", self.name_edited)
@@ -302,6 +302,28 @@ class ExporterWindow:
         root.after(100, self.poll)
         root.after(150, self.connect)
         root.after_idle(self.set_minimum_size)
+
+    def set_dark_title_bar(self, event):
+        if event.widget is not self.root:
+            return
+        # Tk's drawing window is nested inside the native window that owns the caption.
+        get_ancestor = ctypes.windll.user32.GetAncestor
+        get_ancestor.argtypes = (ctypes.c_void_p, ctypes.c_uint)
+        get_ancestor.restype = ctypes.c_void_p
+        hwnd = get_ancestor(self.root.winfo_id(), 2)  # GA_ROOT
+        if not hwnd:
+            return
+        set_attribute = ctypes.windll.dwmapi.DwmSetWindowAttribute
+        set_attribute.argtypes = (ctypes.c_void_p, ctypes.c_uint, ctypes.c_void_p, ctypes.c_uint)
+        set_attribute.restype = ctypes.c_long
+        # Unsupported attributes leave the Windows default in place.
+        for attribute, value in (
+            (20, 1),         # DWMWA_USE_IMMERSIVE_DARK_MODE
+            (35, 0x202020),  # DWMWA_CAPTION_COLOR
+            (36, 0xFFFFFF),  # DWMWA_TEXT_COLOR
+        ):
+            setting = ctypes.c_uint32(value)
+            set_attribute(hwnd, attribute, ctypes.byref(setting), ctypes.sizeof(setting))
 
     def button(self, parent, text, command):
         widget = ttk.Button(parent, text=text, command=command)
@@ -383,6 +405,12 @@ class ExporterWindow:
         self.configure_sections(reset=False)
         self.root.after_idle(self.set_minimum_size)
 
+    def custom_names_check(self, parent):
+        widget = ttk.Checkbutton(parent, text="Use custom names", variable=self.use_custom_names)
+        widget.pack(anchor="w", pady=(6, 2))
+        self.controls.append(widget)
+        self.tooltips.append(Tooltip(widget, "Review and edit each sequence name before exporting."))
+
     def configure_sections(self, reset=True):
         colour = self.mode.get() == "Colour Mode"
         self.settings_panel.configure(padding=0, relief="flat", borderwidth=0)
@@ -401,20 +429,54 @@ class ExporterWindow:
             else:
                 item["content"].pack_forget()
             item["toggle"].configure(text=("▾  " if item["opened"] else "▸  ") + item["title"])
-        self.sections["sequence"]["toggle"].configure(state="normal" if self.combine.get() else "disabled")
 
     def entry(self, parent, variable, width=None):
         widget = ttk.Entry(parent, textvariable=variable, width=width or 25)
         self.controls.append(widget)
         return widget
 
+    @staticmethod
+    def scrolling_rows(parent, *, width, height):
+        canvas = tk.Canvas(parent, highlightthickness=0, width=width, height=height, background="#3c3c3c")
+        canvas.pack(side="left", fill="both", expand=True)
+        bar = ttk.Scrollbar(parent, orient="vertical", command=canvas.yview, style="Layers.Vertical.TScrollbar")
+
+        def scroll_position(first, last):
+            bar.set(first, last)
+            if float(first) <= 0 and float(last) >= 1:
+                bar.pack_forget()
+            elif not bar.winfo_manager():
+                bar.pack(side="right", fill="y", before=canvas)
+
+        canvas.configure(yscrollcommand=scroll_position)
+        rows = ttk.Frame(canvas)
+        item = canvas.create_window(0, 0, window=rows, anchor="nw")
+        rows.bind("<Configure>", lambda event: canvas.configure(scrollregion=canvas.bbox(item)))
+        canvas.bind("<Configure>", lambda event: canvas.itemconfigure(item, width=event.width))
+        canvas.bind("<MouseWheel>", lambda event: ExporterWindow.scroll_rows(event, canvas))
+        return canvas, rows
+
+    @staticmethod
+    def scroll_rows(event, canvas):
+        if canvas.yview() != (0.0, 1.0) and event.delta:
+            canvas.yview_scroll(-int(event.delta / 120) or (-1 if event.delta > 0 else 1), "units")
+        return "break"
+
+    def bind_pane_wheel(self, widget, canvas):
+        widget.bind("<MouseWheel>", lambda event: self.scroll_rows(event, canvas))
+        for child in widget.winfo_children():
+            self.bind_pane_wheel(child, canvas)
+
+    def layer_checkbuttons(self):
+        yield from (widget for _, widget in self.colour_checks.values())
+        yield from (widget for widget in self.layer_box.winfo_children() if isinstance(widget, ttk.Checkbutton))
+
     def set_busy(self, busy, exporting=False):
         self.busy = busy
         for widget in self.controls:
             widget.configure(state="disabled" if busy else "normal")
-        for widget in self.layer_box.winfo_children():
-            if isinstance(widget, ttk.Checkbutton):
-                widget.configure(state="disabled" if busy else "normal")
+        for widget in self.layer_checkbuttons():
+            widget.configure(state="disabled" if busy else "normal")
         self.cancel_button.configure(state="normal" if exporting else "disabled")
         if not busy:
             self.format_picker.configure(state="readonly")
@@ -435,6 +497,8 @@ class ExporterWindow:
         threading.Thread(target=worker, daemon=True).start()
 
     def populate(self, info):
+        if self.info is None or identity(info) != identity(self.info):
+            self.custom_drafts.clear()
         self.info = info
         self.resume_folder = None
         self.start_button.configure(text="Export layers")
@@ -462,62 +526,90 @@ class ExporterWindow:
         rgb = layer.get("colour_rgb")
         image = tk.PhotoImage(width=12, height=12)
         image.put("#" + "".join(f"{value:02x}" for value in rgb) if rgb else "#686868", to=(0, 0, 12, 12))
-        self.swatches.append(image)
         return image
 
     def render_layer_list(self):
         self.colour_checks.clear()
-        for widget in self.layer_box.winfo_children():
-            widget.destroy()
-        self.swatches.clear()
+        self.colour_members.clear()
+        self.colour_previews.clear()
+        for pane in (self.colour_box, self.layer_box):
+            for widget in pane.winfo_children():
+                widget.destroy()
+        self.colour_canvas.yview_moveto(0)
+        self.canvas.yview_moveto(0)
         if self.mode.get() == "Colour Mode":
-            groups = {}
             for layer in self.info["layers"]:
                 if not layer.get("is_folder") and layer.get("colour_index") is not None:
-                    groups.setdefault(layer["colour_index"], []).append(layer)
-            ttk.Label(self.layer_box, text="Colour groups", style="Muted.TLabel").pack(anchor="w")
-            for index, members in groups.items():
+                    self.colour_members.setdefault(layer["colour_index"], []).append(layer)
+            for index, members in self.colour_members.items():
                 value = tk.BooleanVar()
-                name = members[0].get("colour_name") or f"Colour {index}"
-                check = ttk.Checkbutton(self.layer_box, text=f"{name} · {len(members)} {'layer' if len(members) == 1 else 'layers'}",
-                                       image=self.swatch(members[0]), compound="left", variable=value,
-                                       command=lambda key=index: self.select_colour(key))
-                check.pack(anchor="w", pady=3)
-                check.bind("<MouseWheel>", self.scroll_layers)
+                name = colour_sequence_name(index, members, "colour")
+                row = ttk.Frame(self.colour_box)
+                row.pack(fill="x", pady=2)
+                row.columnconfigure(1, weight=1)
+                check = ttk.Checkbutton(row, text=f"{name} · {len(members)} {'layer' if len(members) == 1 else 'layers'}",
+                                        compound="left", variable=value, command=lambda key=index: self.select_colour(key))
+                check.image = self.swatch(members[0])
+                check.configure(image=check.image)
+                check.grid(row=0, column=0, sticky="nw")
+                preview = ttk.Label(row, style="Muted.TLabel")
+                preview.grid(row=0, column=1, sticky="w")
+                row.bind("<Configure>", lambda event, check=check, preview=preview:
+                         preview.configure(wraplength=max(1, event.width - check.winfo_reqwidth())))
                 self.colour_checks[index] = (value, check)
-            ttk.Separator(self.layer_box).pack(fill="x", pady=8)
-            ttk.Label(self.layer_box, text="Layer stack", style="Muted.TLabel").pack(anchor="w")
+                self.colour_previews[index] = preview
         for layer in self.info["layers"]:
             if layer.get("is_folder"):
                 divider = ttk.Frame(self.layer_box)
                 divider.pack(fill="x", pady=(9, 5))
                 label = "[" + layer["name"] + "]" + ("  (hidden)" if not layer["visible"] else "")
-                ttk.Label(divider, text=label, style="Muted.TLabel", image=self.swatch(layer), compound="left").pack(side="left")
+                caption = ttk.Label(divider, text=label, style="Muted.TLabel", compound="left")
+                caption.image = self.swatch(layer)
+                caption.configure(image=caption.image)
+                caption.pack(side="left")
                 ttk.Separator(divider, orient="horizontal").pack(side="left", fill="x", expand=True, padx=(8, 0))
                 continue
             value = self.checks[layer["id"]]
             label = layer["name"] + ("  (hidden)" if not layer["visible"] else "")
             check = ttk.Checkbutton(self.layer_box, text=label, variable=value, command=self.schedule_check,
-                                    image=self.swatch(layer), compound="left")
+                                    compound="left")
+            check.image = self.swatch(layer)
+            check.configure(image=check.image)
             check.pack(anchor="w", pady=3)
-            check.bind("<MouseWheel>", self.scroll_layers)
+        self.bind_pane_wheel(self.colour_box, self.colour_canvas)
+        self.bind_pane_wheel(self.layer_box, self.canvas)
         self.sync_colour_checks()
 
     def select_colour(self, index):
         selected = self.colour_checks[index][0].get()
-        for layer in self.info["layers"]:
-            if layer["id"] in self.checks and layer.get("colour_index") == index:
-                self.checks[layer["id"]].set(selected)
+        for layer in self.colour_members[index]:
+            self.checks[layer["id"]].set(selected)
         self.schedule_check()
 
     def sync_colour_checks(self):
         if not self.info:
             return
-        for index, (variable, widget) in self.colour_checks.items():
-            states = [self.checks[layer["id"]].get() for layer in self.info["layers"]
-                      if layer["id"] in self.checks and layer.get("colour_index") == index]
-            variable.set(all(states))
-            widget.state(["alternate" if any(states) and not all(states) else "!alternate"])
+        selected_names = {}
+        for index, members in self.colour_members.items():
+            variable, widget = self.colour_checks[index]
+            selected = [layer for layer in members if self.checks[layer["id"]].get()]
+            all_checked = len(selected) == len(members)
+            variable.set(all_checked)
+            widget.state(["alternate" if selected and not all_checked else "!alternate"])
+            try:
+                name = colour_sequence_name(index, selected or members, self.colour_naming.get())
+            except ValueError:
+                self.colour_previews[index].configure(text="· RGB unavailable")
+                continue
+            if selected:
+                selected_names[index] = name
+            else:
+                self.colour_previews[index].configure(text="· " + folder_names([name])[0])
+        selected_order = dict.fromkeys(layer.get("colour_index") for layer in self.info["layers"]
+                                       if layer["id"] in self.checks and self.checks[layer["id"]].get()
+                                       and layer.get("colour_index") in selected_names)
+        for index, name in zip(selected_order, folder_names(selected_names[index] for index in selected_order)):
+            self.colour_previews[index].configure(text="· " + name)
 
     def full_range(self):
         if self.info:
@@ -565,7 +657,6 @@ class ExporterWindow:
         self.sync_colour_checks()
         self.combine_check.configure(state="disabled" if self.mode.get() == "Colour Mode" else "normal")
         self.sync_sequence_name()
-        self.sections["sequence"]["toggle"].configure(state="normal" if self.combine.get() else "disabled")
         for widget in (self.sequence_entry, self.name_reset, self.name_bottom):
             widget.configure(state="normal" if self.combine.get() else "disabled")
         self.sequence_label.configure(style="Muted.TLabel" if self.combine.get() else "Disabled.TLabel")
@@ -583,18 +674,18 @@ class ExporterWindow:
                 for widget in self.controls:
                     if widget not in (self.refresh_button, *self.mode_buttons.values(), self.start_button, self.resume_button):
                         widget.configure(state="disabled")
-                for widget in self.layer_box.winfo_children():
-                    if isinstance(widget, ttk.Checkbutton):
-                        widget.configure(state="disabled")
+                for widget in self.layer_checkbuttons():
+                    widget.configure(state="disabled")
                 self.start_button.configure(state="normal")
                 return True
             destination = self.session_folder or Path(self.parent.get()) / "TVPaint_export_YYYYMMDD_HHMMSS"
-            task = plan(self.info, destination, self.options())
+            custom = self.use_custom_names.get()
+            task = plan(self.info, destination, self.options(), check_paths=not custom)
             self.preview.set(str(frame_path(Path("<export folder>"), task["layers"][0], task["options"]["first"], task["options"])))
             if not self.parent.get():
                 raise ValueError("Choose an output folder.")
             check_writable(self.session_folder or self.parent.get())
-            if self.session_folder:
+            if self.session_folder and not custom:
                 key = self.collision_key(task)
                 conflicts = sequence_conflicts(self.session_folder, task)
                 if conflicts and self.overwrite_key != key:
@@ -628,7 +719,6 @@ class ExporterWindow:
             options = Options.from_manifest(data["options"])
             if not self.info:
                 raise ValueError("Connect to TVPaint first.")
-            from export_options import identity
             if data["identity"] != identity(self.info):
                 raise ValueError("Connect to the original scene with the same layer list before resuming.")
             task = plan(self.info, selected, options)
@@ -665,14 +755,202 @@ class ExporterWindow:
             self.notice.set(f"Cannot resume: {exc}")
 
     def start(self):
+        if self.naming_window is not None:
+            self.naming_window.lift()
+            return
         if self.busy or not self.validate():
             return
         options = self.options()
         resume = self.resume_folder is not None
         manual = self.mode.get() == "Manual Mode"
         output = self.resume_folder or self.session_folder or new_output_folder(self.parent.get())
-        task = plan(self.info, output, options)
+        if resume:
+            self.run_export(output, options, resume=True, manual=manual)
+            return
+        custom = self.use_custom_names.get()
+        try:
+            task = plan(self.info, output, options, check_paths=not custom)
+        except (ValueError, OSError) as exc:
+            self.notice.set(str(exc))
+            return
+        if custom:
+            self.prompt_custom_names(output, options, task, manual)
+            return
         overwrite = manual and self.session_folder is not None and self.overwrite_key == self.collision_key(task)
+        self.run_export(output, options, manual=manual, overwrite=overwrite)
+
+    def prompt_custom_names(self, output, options, task, manual):
+        window = self.naming_window = tk.Toplevel(self.root)
+        window.title("Use custom names")
+        window.transient(self.root)
+        window.configure(background="#3C3C3C")
+        window.geometry("680x420")
+        window.minsize(500, 290)
+        box = ttk.Frame(window, padding=16)
+        box.pack(fill="both", expand=True)
+        ttk.Label(box, text="Edit the names you want to use in this export.",
+                  style="Muted.TLabel").pack(anchor="w", pady=(0, 8))
+        footer = ttk.Frame(box)
+        footer.pack(side="bottom", fill="x", pady=(10, 0))
+        message = tk.StringVar()
+        buttons = ttk.Frame(footer)
+        buttons.pack(fill="x")
+        notice = ttk.Label(footer, textvariable=message, style="Notice.TLabel", wraplength=460)
+
+        def show_notice(*_):
+            if message.get():
+                notice.pack(anchor="w", pady=(0, 6), before=buttons)
+            else:
+                notice.pack_forget()
+
+        message.trace_add("write", show_notice)
+        scroll = ttk.Frame(box)
+        scroll.pack(fill="both", expand=True)
+        canvas, rows = self.scrolling_rows(scroll, width=620, height=230)
+        rows.configure(padding=(0, 0, 6, 0))
+        window.bind("<MouseWheel>", lambda event: self.scroll_rows(event, canvas))
+        fields, entries, previews, errors, keys, labels = [], [], [], [], [], []
+        source_layers = {layer["id"]: layer for layer in self.info["layers"]}
+        for layer in task["layers"]:
+            key = (self.mode.get(), layer.get("colour_index") if options.colour_mode else None,
+                   tuple(layer.get("source_ids", [layer["id"]])))
+            keys.append(key)
+            source = ", ".join(layer.get("source_names", [layer["name"]]))
+            swatch = None
+            if options.colour_mode:
+                group = colour_sequence_name(layer["colour_index"], [source_layers[layer["id"]]], "colour")
+                source = f"{group} · {layer['filename']}"
+                swatch = self.swatch(layer)
+            row = ttk.Frame(rows)
+            row.pack(fill="x", pady=(0, 6))
+            row_preview, row_error = tk.StringVar(), tk.StringVar()
+            heading = ttk.Frame(row)
+            heading.pack(fill="x", pady=(0, 2))
+            label = ttk.Label(heading, text=source, compound="left", image=swatch or "", wraplength=300)
+            label.image = swatch
+            label.pack(side="left", anchor="n")
+            filename_label = ttk.Label(heading, textvariable=row_preview, style="Muted.TLabel", wraplength=300)
+            filename_label.pack(side="left", anchor="n")
+            value = tk.StringVar(value=self.custom_drafts.get(key, layer["filename"]))
+            entry = ttk.Entry(row, textvariable=value)
+            entry.pack(fill="x")
+            fields.append(value)
+            entries.append(entry)
+            previews.append(row_preview)
+            errors.append(row_error)
+            error_label = ttk.Label(row, textvariable=row_error, style="Notice.TLabel", wraplength=610)
+            labels.append((label, filename_label, error_label))
+
+            def show_error(*_, value=row_error, widget=error_label):
+                if value.get():
+                    widget.pack(anchor="w", pady=(2, 0))
+                else:
+                    widget.pack_forget()
+
+            row_error.trace_add("write", show_error)
+
+            def reveal(event, row=row, field=entry):
+                height = rows.winfo_height()
+                end = row.winfo_y() + field.winfo_y() + field.winfo_height()
+                if end > canvas.canvasy(canvas.winfo_height()):
+                    canvas.yview_moveto((end - canvas.winfo_height()) / height)
+                elif row.winfo_y() < canvas.canvasy(0):
+                    canvas.yview_moveto(row.winfo_y() / height)
+
+            entry.bind("<FocusIn>", reveal)
+
+        def wrap_rows(event):
+            width = max(2, event.width - 28)
+            for heading, filename, error in labels:
+                heading.configure(wraplength=width // 2)
+                filename.configure(wraplength=max(1, width - heading.winfo_reqwidth()))
+                error.configure(wraplength=width)
+
+        scroll.bind("<Configure>", wrap_rows)
+        approved_conflicts = None
+
+        def close():
+            for key, field, layer in zip(keys, fields, task["layers"]):
+                if field.get() == layer["filename"]:
+                    self.custom_drafts.pop(key, None)
+                else:
+                    self.custom_drafts[key] = field.get()
+            self.naming_window = None
+            window.destroy()
+
+        def review(*_):
+            nonlocal approved_conflicts
+            approved_conflicts = None
+            overwrite_button.pack_forget()
+            message.set("")
+            names = [field.get() for field in fields]
+            problems = custom_name_errors(names)
+            for name, preview, error, problem in zip(names, previews, errors, problems):
+                folder = f"{options.folder_prefix.strip()}_{name}" if options.folder_prefix.strip() else name
+                layer = dict(filename=name, folder=folder)
+                path = None
+                if not problem:
+                    path = frame_path(Path(), layer, options.first, task["options"])
+                    last = frame_path(output, layer, options.last, task["options"])
+                    if len(str(last.absolute())) >= 250:
+                        problem = "This output path is too long. Enter a shorter name."
+                preview.set(f" · {path}" if path and not problem else "")
+                error.set(problem)
+            export_button.configure(state="disabled" if any(error.get() for error in errors) else "normal")
+
+        def submit(overwrite=False):
+            nonlocal approved_conflicts
+            if str(export_button["state"]) == "disabled":
+                return
+            named_options = replace(options, custom_names=[field.get() for field in fields])
+            try:
+                named_task = plan(self.info, output, named_options)
+                conflicts = set()
+                can_overwrite = manual and self.session_folder == output
+                for layer, error in zip(named_task["layers"], errors):
+                    matches = sequence_conflicts(output, {**named_task, "layers": [layer]}) if can_overwrite else []
+                    conflicts.update(matches)
+                    error.set("This sequence already exists in the export folder." if matches else "")
+                if conflicts:
+                    folder_names = {layer["folder"].casefold() for layer in named_task["layers"]
+                                    if named_task["options"]["layer_folders"]}
+                    root = output.resolve()
+                    safe = all(path.suffix.casefold() in {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".tga", ".bmp"}
+                               and not (path.parent == output and path.name.casefold() in folder_names)
+                               and not path.is_symlink() and root in path.resolve().parents
+                               for path in conflicts)
+                    if not overwrite or conflicts != approved_conflicts or not safe:
+                        approved_conflicts = conflicts
+                        if safe:
+                            overwrite_button.pack(side="right", padx=(0, 8))
+                        else:
+                            overwrite_button.pack_forget()
+                        message.set("Choose different names or overwrite the matching sequences." if safe else
+                                    "An existing file blocks one of these names. Choose a different name.")
+                        return
+            except (ValueError, OSError) as exc:
+                message.set(str(exc))
+                return
+            close()
+            self.preview.set(str(frame_path(Path("<export folder>"), named_task["layers"][0],
+                                            options.first, named_task["options"])))
+            self.run_export(output, named_options, manual=manual, overwrite=bool(conflicts))
+
+        ttk.Button(buttons, text="Back", command=close).pack(side="left")
+        export_button = ttk.Button(buttons, text="Export", command=submit)
+        export_button.pack(side="right")
+        overwrite_button = ttk.Button(buttons, text="Overwrite layers", command=lambda: submit(overwrite=True))
+        for field in fields:
+            field.trace_add("write", review)
+        window.protocol("WM_DELETE_WINDOW", close)
+        window.bind("<Escape>", lambda event: close())
+        review()
+        window.wait_visibility()
+        window.grab_set()
+        entries[0].focus_set()
+        entries[0].selection_range(0, "end")
+
+    def run_export(self, output, options, *, resume=False, manual=False, overwrite=False):
         self.destination = output
         self.cancel.clear()
         self.set_busy(True, exporting=True)
@@ -808,6 +1086,14 @@ class ExporterWindow:
         if self.mode.get() == self.active_mode:
             return
         self.active_mode = self.mode.get()
+        colour = self.mode.get() == "Colour Mode"
+        self.colour_panel.master.rowconfigure(1, weight=int(colour), uniform="layer_panes" if colour else "")
+        self.layer_panel.configure(text="Layer stack" if colour else "Layers")
+        self.layer_panel.grid_configure(pady=(4, 0) if colour else 0)
+        if colour:
+            self.colour_panel.grid()
+        else:
+            self.colour_panel.grid_remove()
         self.resume_folder = None
         self.session_folder = None
         self.combine.set(self.mode.get() == "Manual Mode")
@@ -905,12 +1191,6 @@ class ExporterWindow:
     def set_minimum_size(self):
         self.root.update_idletasks()
         self.root.minsize(max(880, self.root.winfo_reqwidth()), max(820, self.root.winfo_reqheight()))
-
-    def scroll_layers(self, event):
-        if self.canvas.yview() != (0.0, 1.0):
-            self.canvas.yview_scroll(-int(event.delta / 120), "units")
-        return "break"
-
 
 def run():
     root = tk.Tk()
